@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>小智 Dashboard</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, "Microsoft YaHei", sans-serif; background: #10151d; color: #e9f0f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #25374d, #10151d 55%); }
+    .page { width: min(1120px, calc(100% - 32px)); margin: 28px auto 60px; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 22px; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 4px; font-size: clamp(24px, 4vw, 38px); }
+    .muted { color: #9dafc2; }
+    button, input, textarea, select { font: inherit; }
+    button { border: 0; border-radius: 9px; padding: 9px 13px; cursor: pointer; background: #3c94ff; color: white; }
+    button.secondary { background: #293748; color: #dfe9f4; }
+    button.danger { background: #612e37; color: #ffcbd1; }
+    button:disabled { opacity: .45; cursor: wait; }
+    .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .toolbar input { width: 148px; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) 352px; gap: 22px; align-items: start; }
+    .card { background: rgba(22, 30, 41, .92); border: 1px solid #33445a; border-radius: 16px; padding: 18px; box-shadow: 0 14px 40px rgba(0,0,0,.2); }
+    .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .section-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .section-title h2 { font-size: 19px; }
+    .entry { border: 1px solid #34475d; border-radius: 11px; padding: 12px; margin-top: 10px; background: #1a2430; }
+    .entry-head { display: flex; justify-content: space-between; gap: 8px; }
+    .entry h3 { font-size: 15px; margin-bottom: 5px; overflow-wrap: anywhere; }
+    .entry p { margin-bottom: 10px; color: #b5c3d1; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .time { color: #72bbff; font-variant-numeric: tabular-nums; }
+    .entry-actions { display: flex; gap: 7px; }
+    .entry-actions button { padding: 5px 8px; font-size: 12px; }
+    form { display: grid; gap: 11px; }
+    label { display: grid; gap: 5px; font-size: 13px; color: #b8c7d6; }
+    input, textarea, select { width: 100%; color: #edf5fd; background: #111923; border: 1px solid #3a4d62; border-radius: 8px; padding: 9px; }
+    textarea { min-height: 92px; resize: vertical; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .form-actions { display: flex; gap: 8px; }
+    .form-actions button { flex: 1; }
+    .status { min-height: 22px; margin: 12px 0 0; color: #8fd0a5; }
+    .status.error { color: #ff9caa; }
+    .mock-wrap { margin-top: 22px; }
+    .mock { width: 320px; height: 240px; max-width: 100%; margin: 0 auto; background: #071321; border: 8px solid #28313a; border-radius: 15px; padding: 12px; overflow: hidden; box-shadow: inset 0 0 0 1px #44515d; }
+    .mock-title { display: flex; justify-content: space-between; color: #87ccff; font-size: 13px; margin-bottom: 8px; }
+    .mock-section { font-size: 11px; color: #7f94aa; margin: 8px 0 4px; }
+    .mock-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; padding: 3px 0; border-bottom: 1px solid #172a3d; }
+    .empty { color: #6f8295; font-size: 13px; padding: 12px 0; }
+    dialog { width: min(420px, calc(100% - 28px)); border: 1px solid #455b70; border-radius: 13px; background: #17212d; color: #eef6ff; padding: 20px; }
+    dialog::backdrop { background: rgba(0,0,0,.6); }
+    @media (max-width: 840px) { .grid { grid-template-columns: 1fr; } .columns { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div><h1>小智 Dashboard</h1><div class="muted">本地日程与工作日志</div></div>
+      <div class="toolbar">
+        <button class="secondary" id="prev" title="前一天">‹</button>
+        <input id="date" type="date" aria-label="日期">
+        <button class="secondary" id="next" title="后一天">›</button>
+        <button class="secondary" id="today">今天</button>
+        <button class="secondary" id="tokenButton">访问令牌</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="card">
+        <div class="columns">
+          <div>
+            <div class="section-title"><h2>今日日程</h2><span id="scheduleCount" class="muted"></span></div>
+            <div id="schedules"></div>
+          </div>
+          <div>
+            <div class="section-title"><h2>工作日志</h2><span id="logCount" class="muted"></span></div>
+            <div id="logs"></div>
+          </div>
+        </div>
+        <div class="mock-wrap">
+          <h2>320 × 240 设备预览</h2>
+          <div class="mock">
+            <div class="mock-title"><strong>Dashboard</strong><span id="mockDate"></span></div>
+            <div class="mock-section">日程</div><div id="mockSchedules"></div>
+            <div class="mock-section">工作日志</div><div id="mockLogs"></div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="card">
+        <h2 id="formHeading">添加记录</h2>
+        <form id="entryForm">
+          <input id="entryId" type="hidden">
+          <label>类型<select id="type"><option value="schedule">日程</option><option value="log">工作日志</option></select></label>
+          <div class="row">
+            <label>日期<input id="entryDate" type="date" required></label>
+            <label>时间（可选）<input id="time" type="time"></label>
+          </div>
+          <label>标题<input id="title" maxlength="200" required></label>
+          <label>内容（可选）<textarea id="content" maxlength="10000"></textarea></label>
+          <div class="form-actions"><button id="save" type="submit">保存</button><button class="secondary" id="cancel" type="button" hidden>取消编辑</button></div>
+        </form>
+        <p id="status" class="status" role="status"></p>
+      </aside>
+    </div>
+  </main>
+
+  <dialog id="tokenDialog">
+    <form method="dialog" id="tokenForm">
+      <h2>访问令牌</h2>
+      <p class="muted">服务启用 DASHBOARD_TOKEN 时填写。令牌只保存在此浏览器。</p>
+      <label>Bearer Token<input id="token" type="password" autocomplete="off"></label>
+      <div class="form-actions"><button value="save">保存</button><button class="secondary" value="cancel">取消</button></div>
+    </form>
+  </dialog>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    let model = { date: '', schedules: [], work_logs: [] };
+    let token = localStorage.getItem('dashboardToken') || '';
+    const localIsoDate = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+    const escapeHtml = value => String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+    const headers = json => ({ ...(json ? {'Content-Type':'application/json'} : {}), ...(token ? {'Authorization':`Bearer ${token}`} : {}) });
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, { ...options, headers: { ...headers(Boolean(options.body)), ...(options.headers || {}) } });
+      if (response.status === 204) return null;
+      let payload;
+      try { payload = await response.json(); } catch { payload = {}; }
+      if (!response.ok) {
+        if (response.status === 401) $('tokenDialog').showModal();
+        throw new Error(payload.error?.message || `HTTP ${response.status}`);
+      }
+      return payload;
+    }
+
+    function entryHtml(entry) {
+      return `<article class="entry" data-id="${entry.id}">
+        <div class="entry-head"><h3>${escapeHtml(entry.title)}</h3>${entry.time ? `<span class="time">${entry.time}</span>` : ''}</div>
+        ${entry.content ? `<p>${escapeHtml(entry.content)}</p>` : ''}
+        <div class="entry-actions"><button class="secondary edit">编辑</button><button class="danger delete">删除</button></div>
+      </article>`;
+    }
+
+    function renderList(target, entries) {
+      $(target).innerHTML = entries.length ? entries.map(entryHtml).join('') : '<div class="empty">暂无记录</div>';
+    }
+
+    function renderMock(target, entries) {
+      $(target).innerHTML = entries.length ? entries.slice(0, 3).map(e => `<div class="mock-line">${e.time ? escapeHtml(e.time)+' ' : ''}${escapeHtml(e.title)}</div>`).join('') : '<div class="mock-line muted">暂无</div>';
+    }
+
+    function render() {
+      renderList('schedules', model.schedules);
+      renderList('logs', model.work_logs);
+      $('scheduleCount').textContent = `${model.schedules.length} 项`;
+      $('logCount').textContent = `${model.work_logs.length} 项`;
+      $('mockDate').textContent = model.date.slice(5).replace('-', '/');
+      renderMock('mockSchedules', model.schedules);
+      renderMock('mockLogs', model.work_logs);
+    }
+
+    function setStatus(message, error = false) { $('status').textContent = message; $('status').classList.toggle('error', error); }
+
+    async function load(useServerDate = false) {
+      setStatus('正在读取…');
+      const query = useServerDate ? '' : `date=${encodeURIComponent($('date').value)}&`;
+      try {
+        model = await api(`/api/dashboard?${query}limit=100&content_limit=10000`);
+        if (useServerDate) { $('date').value = model.date; resetForm(); }
+        render(); setStatus('');
+      }
+      catch (error) { setStatus(error.message, true); }
+    }
+
+    function resetForm() {
+      $('entryForm').reset(); $('entryId').value = ''; $('entryDate').value = $('date').value;
+      $('formHeading').textContent = '添加记录'; $('cancel').hidden = true;
+    }
+
+    function changeDay(offset) {
+      const d = new Date(`${$('date').value}T12:00:00`); d.setDate(d.getDate() + offset);
+      $('date').value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      resetForm(); load();
+    }
+
+    $('entryForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const id = $('entryId').value;
+      const payload = { type: $('type').value, date: $('entryDate').value, title: $('title').value, content: $('content').value };
+      if ($('time').value) payload.time = $('time').value;
+      $('save').disabled = true;
+      try {
+        await api(id ? `/api/entries/${id}` : '/api/entries', { method: id ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
+        setStatus(id ? '记录已更新' : '记录已添加'); resetForm(); await load();
+      } catch (error) { setStatus(error.message, true); }
+      finally { $('save').disabled = false; }
+    });
+
+    document.addEventListener('click', async event => {
+      const card = event.target.closest('.entry'); if (!card) return;
+      const id = Number(card.dataset.id);
+      const entry = [...model.schedules, ...model.work_logs].find(item => item.id === id); if (!entry) return;
+      if (event.target.classList.contains('edit')) {
+        $('entryId').value = entry.id; $('type').value = entry.type; $('entryDate').value = entry.date;
+        $('time').value = entry.time || ''; $('title').value = entry.title; $('content').value = entry.content;
+        $('formHeading').textContent = '编辑记录'; $('cancel').hidden = false; $('title').focus();
+      }
+      if (event.target.classList.contains('delete') && confirm(`删除“${entry.title}”？`)) {
+        try { await api(`/api/entries/${id}`, { method: 'DELETE' }); resetForm(); await load(); }
+        catch (error) { setStatus(error.message, true); }
+      }
+    });
+
+    $('prev').onclick = () => changeDay(-1); $('next').onclick = () => changeDay(1);
+    $('today').onclick = () => load(true);
+    $('date').onchange = () => { resetForm(); load(); }; $('cancel').onclick = resetForm;
+    $('tokenButton').onclick = () => { $('token').value = token; $('tokenDialog').showModal(); };
+    $('tokenForm').addEventListener('submit', event => {
+      if (event.submitter?.value !== 'save') return;
+      token = $('token').value.trim();
+      if (token) localStorage.setItem('dashboardToken', token); else localStorage.removeItem('dashboardToken');
+      setTimeout(load, 0);
+    });
+
+    $('date').value = localIsoDate(); resetForm(); load(true);
+  </script>
+</body>
+</html>

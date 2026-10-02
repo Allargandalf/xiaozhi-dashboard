@@ -1,0 +1,75 @@
+name: Pre-flash CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host-tests:
+    name: Host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test companion service
+        working-directory: companion
+        run: python -m unittest discover -s tests -v
+      - name: Test release and serial tools
+        run: python -m unittest discover -s scripts/tests -v
+
+  firmware:
+    name: ESP-IDF 6.1 build and package
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify SDK
+        shell: bash
+        working-directory: firmware
+        run: |
+          source "$IDF_PATH/export.sh"
+          idf.py --version
+      - name: Build isolated Dashboard board identity
+        shell: bash
+        working-directory: firmware
+        run: |
+          source "$IDF_PATH/export.sh"
+          python scripts/build.py lckfb/szpi-esp32s3-dashboard \
+            --name lichuang-dev-dashboard \
+            --language zh-CN
+      - name: Run firmware host tests with resolved components
+        shell: bash
+        working-directory: firmware
+        run: |
+          source "$IDF_PATH/export.sh"
+          python -m unittest discover -s scripts/tests -v
+      - name: Create pre-flash bundle
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          python scripts/package_release.py \
+            --build-dir firmware/build \
+            --output-dir release \
+            --release-version v0.1-pre-flash \
+            --source-revision "$GITHUB_SHA"
+          test -s release/merged-firmware.bin
+          test -s release/manifest.json
+          test -s release/SHA256SUMS
+      - name: Upload pre-flash bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiaozhi-dashboard-v0.1-pre-flash-${{ github.sha }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 14

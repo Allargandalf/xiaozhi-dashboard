@@ -1,0 +1,50 @@
+# Python and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+tmp*/
+.test-work/
+
+# Local configuration, credentials, and databases
+.env
+.env.*
+!.env.example
+secrets.*
+*.token
+*.pem
+*.key
+*.db
+*.db-shm
+*.db-wal
+companion/data/
+
+# ESP-IDF generated state and downloaded components
+firmware/build/
+firmware/releases/
+firmware/components/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/main/assets/lang_config.h
+firmware/main/mmap_generate_*.h
+
+# Local SDK/toolchain installs and editor state
+/.espressif/
+.tools/
+/esp-idf/
+.vscode/
+.idea/
+.clangd/
+
+# Generated release bundles
+/release/*
+!/release/README.md
+!/release/release_notes.md
+
+# Operating-system files
+.DS_Store
+Thumbs.db
