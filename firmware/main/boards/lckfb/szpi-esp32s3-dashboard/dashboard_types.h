@@ -70,7 +70,8 @@ inline bool IsValidTime(const std::string& value) {
 inline bool IsValidType(const std::string& value) { return value == "schedule" || value == "log"; }
 
 inline bool IsValidView(const std::string& value) {
-    return value == "assistant" || value == "dashboard";
+    return value == "assistant" || value == "dashboard" || value == "overview" ||
+           value == "schedule" || value == "log";
 }
 
 inline size_t DecodeUtf8CodePoint(const std::string& value, size_t offset, uint32_t& code_point) {

@@ -2,9 +2,9 @@
 
 这是面向立创·实战派 ESP32-S3 的小智 Dashboard v0.1。它保留官方 xiaozhi.me、语音、音频和配网流程，在设备端增加日程/工作日志界面与 MCP 工具，在电脑上用一个本地 SQLite 服务保存数据。
 
-当前 `main` 开发版增加 **Type-C 直连同步、新 Dashboard 布局和 30 秒无交互自动返回**。这些改动只同步源码，未发布新的 GitHub Release；已有 `v0.1-pre-flash` 二进制仍是原来的 Wi-Fi 同步版本。当前验证记录见 [BUILD.md](BUILD.md)。
+当前 `main` 开发版增加 **Type-C 直连同步、亮色三页 Dashboard、B 键翻页/语音切换、电脑管理页和 30 秒无交互自动返回**。这些改动只同步源码，未发布新的 GitHub Release；已有 `v0.1-pre-flash` 二进制仍是原来的 Wi-Fi 同步版本。当前验证记录见 [BUILD.md](BUILD.md)。
 
-2026-10-06 已完成 ESP32-S3 实机识别、原固件备份、首次烧录及启动检查。2026-10-08 已完成新版烧录、Type-C 读取同步，用户确认工具切换立即退出和 30 秒无交互回退均正常。语音写入记录、长时间音频稳定性、运行时峰值内存、首次配网和 OTA 仍需验证。[布局预览](docs/dashboard-preview.html) 使用示例数据，按 320×240 屏幕尺寸制作。
+2026-10-06 已完成 ESP32-S3 实机识别、原固件备份、首次烧录及启动检查。2026-10-08 已完成新版烧录、Type-C 读取同步，用户确认工具切换立即退出和 30 秒无交互回退均正常；亮色三页更新后，B 单击/双击及语音选择页面也已实测通过。语音写入记录、长时间音频稳定性、运行时峰值内存、首次配网和 OTA 仍需验证。[布局预览](docs/dashboard-preview.html) 使用示例数据，按 320×240 屏幕尺寸制作。
 
 ```text
 xiaozhi.me AI
@@ -68,13 +68,16 @@ HTTP API 主要供浏览器管理页和手动配置的 Wi-Fi 兼容模式使用�
 
 这块双 Type-C 板卡使用 **USB 转 UART（CH340）接口**同步，本机对应 `COM4`；另一接口是原生 USB，当前没有实现该接口的数据同步。其他电脑的 COM 编号可能不同。
 
-设备在唤醒和对话时显示 Assistant。调用 `self.dashboard.set_view` 并传入 `view=dashboard` 会立即结束当前对话并回到 Dashboard；普通对话结束后，默认在 30 秒无活动时自动回到 Dashboard。
+Dashboard 有总览、仅日程、仅工作记录三个页面。正常使用时 B 单击按这个顺序循环翻页；B 双击进入或退出语音对话。正在对话时单击翻页也会结束对话。保留启动连接失败时单击 B 进入配网的原有行为，没有新增长按配网。
+
+设备在唤醒和对话时显示 Assistant。`self.dashboard.set_view` 接受 `assistant`、`dashboard`、`overview`、`schedule`、`log`；后三个值直接选择对应页面，`dashboard` 返回最近选中的页面。选择任一 Dashboard 页面会立即结束当前对话；普通对话结束后，默认在 30 秒无活动时回到最近选中的页面。可对小智说“显示日程”或“切到工作记录”。
 
 自行构建、运行测试和生成发布包见 [BUILD.md](BUILD.md)。
 
 ## 当前功能边界
 
 - 数据保存在电脑 SQLite 中，没有接入 Apple Calendar。
+- 工作记录是独立记录，可在电脑管理页添加，或通过语音调用 `self.dashboard.add_entry` 的 `type=log` 添加。日程不会随时间经过或完成而自动转成工作记录；当前没有日程完成状态。
 - companion 关闭、电脑休眠或 Type-C 断开时，ESP32 无法同步新数据；恢复连接后可重新读取。只有手动配置为 Wi-Fi HTTP 兼容模式时，网络中断才会影响同步。
 - Dashboard 与原 Assistant UI 共存；唤醒和对话进入小智界面，显式切换可立即返回，普通对话默认在 30 秒无活动后返回。
 - `self.dashboard.add_entry` 返回 `queued` 仅表示进入写入队列；电脑完成保存后设备刷新数据，才能确认已保存。

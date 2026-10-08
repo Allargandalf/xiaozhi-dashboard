@@ -2,6 +2,7 @@
 #include "button.h"
 #include "codecs/box_audio_codec.h"
 #include "config.h"
+#include "dashboard_button_policy.h"
 #include "dashboard_client.h"
 #include "dashboard_display.h"
 #include "dashboard_inactivity_policy.h"
@@ -86,7 +87,7 @@ public:
     }
 
     ~LichuangDashboardBoard() override {
-        inactivity_alive_->store(false);
+        board_alive_->store(false);
         if (inactivity_timer_ != nullptr) {
             esp_timer_stop(inactivity_timer_);
             esp_timer_delete(inactivity_timer_);
@@ -221,34 +222,78 @@ private:
     }
 
     void InitializeButtons() {
-        boot_button_.OnClick([this]() {
-            auto& app = Application::GetInstance();
-            if (app.GetDeviceState() == kDeviceStateStarting) {
-                EnterWifiConfigMode();
+        boot_button_.OnClick(
+            [this]() { ScheduleButtonGesture(dashboard::ButtonGesture::kSingleClick); });
+        boot_button_.OnDoubleClick(
+            [this]() { ScheduleButtonGesture(dashboard::ButtonGesture::kDoubleClick); });
+    }
+
+    static bool IsConversationState(DeviceState state) {
+        return state == kDeviceStateConnecting || state == kDeviceStateListening ||
+               state == kDeviceStateSpeaking;
+    }
+
+    static dashboard::ButtonRuntimeState GetButtonRuntimeState(DeviceState state) {
+        if (state == kDeviceStateStarting) {
+            return dashboard::ButtonRuntimeState::kStarting;
+        }
+        if (state == kDeviceStateIdle) {
+            return dashboard::ButtonRuntimeState::kIdle;
+        }
+        if (IsConversationState(state)) {
+            return dashboard::ButtonRuntimeState::kConversation;
+        }
+        return dashboard::ButtonRuntimeState::kOtherBusy;
+    }
+
+    void ScheduleButtonGesture(dashboard::ButtonGesture gesture) {
+        auto alive = board_alive_;
+        Application::GetInstance().Schedule([this, alive, gesture]() {
+            if (!alive->load()) {
                 return;
             }
-            if (press_to_talk_tool_ == nullptr || !press_to_talk_tool_->IsPressToTalkEnabled()) {
+            HandleButtonGesture(gesture);
+        });
+    }
+
+    void HandleButtonGesture(dashboard::ButtonGesture gesture) {
+        auto& app = Application::GetInstance();
+        const bool press_to_talk_enabled =
+            press_to_talk_tool_ != nullptr && press_to_talk_tool_->IsPressToTalkEnabled();
+        const auto action = dashboard::ResolveButtonAction(
+            gesture, GetButtonRuntimeState(app.GetDeviceState()), press_to_talk_enabled);
+        switch (action) {
+            case dashboard::ButtonAction::kEnterWifiConfig:
+                EnterWifiConfigMode();
+                return;
+            case dashboard::ButtonAction::kCyclePage:
+                display_->CycleDashboardPage();
+                dashboard_client_->RequestRefresh();
+                inactivity_policy_.Restart(GetInactivityState(app), NowMs());
+                return;
+            case dashboard::ButtonAction::kCyclePageAndEndConversation:
+                display_->CycleDashboardPage();
+                dashboard_client_->RequestRefresh();
+                app.EndConversation();
+                return;
+            case dashboard::ButtonAction::kShowAssistantAndToggleVoice:
+                display_->SetPreferredView("assistant");
+                inactivity_policy_.Restart(GetInactivityState(app), NowMs());
                 app.ToggleChatState();
-            }
-        });
-        boot_button_.OnPressDown([this]() {
-            if (press_to_talk_tool_ != nullptr && press_to_talk_tool_->IsPressToTalkEnabled()) {
-                Application::GetInstance().StartListening();
-            }
-        });
-        boot_button_.OnPressUp([this]() {
-            if (press_to_talk_tool_ != nullptr && press_to_talk_tool_->IsPressToTalkEnabled()) {
-                Application::GetInstance().StopListening();
-            }
-        });
-#if CONFIG_USE_DEVICE_AEC
-        boot_button_.OnDoubleClick([]() {
-            auto& app = Application::GetInstance();
-            if (app.GetDeviceState() == kDeviceStateIdle) {
-                app.SetAecMode(app.GetAecMode() == kAecOff ? kAecOnDeviceSide : kAecOff);
-            }
-        });
-#endif
+                return;
+            case dashboard::ButtonAction::kShowAssistantAndStartListening:
+                display_->SetPreferredView("assistant");
+                inactivity_policy_.Restart(GetInactivityState(app), NowMs());
+                app.StartListening();
+                return;
+            case dashboard::ButtonAction::kShowDashboardAndEndConversation:
+                display_->SetPreferredView("dashboard");
+                dashboard_client_->RequestRefresh();
+                app.EndConversation();
+                return;
+            case dashboard::ButtonAction::kNone:
+                return;
+        }
     }
 
     void InitializeCamera() {
@@ -297,21 +342,22 @@ private:
         view.SetMaxLength(16);
         server.AddTool(
             "self.dashboard.set_view",
-            "Switch the display view. view must be assistant or dashboard. A dashboard request "
-            "ends the current voice conversation, then shows the dashboard.",
+            "切换设备页面。把用户说的“语音助手/对话”映射为 assistant，“看板/仪表盘”映射为 "
+            "dashboard（保留上次看板页），“概览”映射为 overview，“日程”映射为 schedule，"
+            "“工作记录/日志”映射为 log。选择 assistant 以外的页面会立即结束当前语音会话。",
             PropertyList({view}), [this](const PropertyList& properties) -> ToolResult {
                 const std::string requested = properties["view"].value<std::string>();
                 if (!dashboard::IsValidView(requested)) {
-                    return std::unexpected("view must be assistant or dashboard");
+                    return std::unexpected(
+                        "view must be assistant, dashboard, overview, schedule, or log");
                 }
                 auto& app = Application::GetInstance();
                 const std::string current = display_->SetPreferredView(requested);
                 const auto state = app.GetDeviceState();
-                const bool conversation_active = state == kDeviceStateConnecting ||
-                                                 state == kDeviceStateListening ||
-                                                 state == kDeviceStateSpeaking;
-                const char* status = requested == current ? "applied" : "waiting_for_idle";
-                if (requested == "dashboard") {
+                const bool conversation_active = IsConversationState(state);
+                const bool dashboard_requested = requested != "assistant";
+                const char* status = "applied";
+                if (dashboard_requested) {
                     dashboard_client_->RequestRefresh();
                     if (conversation_active) {
                         // McpServer sends this tool result from scheduled main-loop work. The
@@ -319,6 +365,10 @@ private:
                         // so the result is sent before its transport is closed.
                         app.EndConversation();
                         status = "ending_conversation";
+                    } else if (state != kDeviceStateIdle) {
+                        status = "waiting_for_idle";
+                    } else if (current == "assistant") {
+                        status = "waiting_for_display";
                     }
                 } else {
                     inactivity_policy_.Restart(GetInactivityState(app), NowMs());
@@ -393,7 +443,7 @@ private:
                     if (!board->inactivity_poll_pending_.compare_exchange_strong(expected, true)) {
                         return;
                     }
-                    auto alive = board->inactivity_alive_;
+                    auto alive = board->board_alive_;
                     Application::GetInstance().Schedule([board, alive]() {
                         if (!alive->load()) {
                             return;
@@ -512,6 +562,7 @@ private:
         std::fflush(stdout);
     }
 
+    std::shared_ptr<std::atomic<bool>> board_alive_ = std::make_shared<std::atomic<bool>>(true);
     i2c_master_bus_handle_t i2c_bus_ = nullptr;
     Button boot_button_;
     DashboardDisplay* display_ = nullptr;
@@ -524,8 +575,6 @@ private:
     uint32_t last_voice_generation_ = 0;
     esp_timer_handle_t inactivity_timer_ = nullptr;
     std::atomic<bool> inactivity_poll_pending_{false};
-    std::shared_ptr<std::atomic<bool>> inactivity_alive_ =
-        std::make_shared<std::atomic<bool>>(true);
 };
 
 DECLARE_BOARD(LichuangDashboardBoard);

@@ -86,6 +86,9 @@ USB 与 Wi-Fi HTTP 两种方式使用同一个 SQLite 数据库和浏览器管�
 - xiaozhi.me 能发现并调用 `self.dashboard.set_view` 与 `self.dashboard.add_entry`。
 - `self.dashboard.set_view` 传入 `view=dashboard` 时立即结束当前对话并显示 Dashboard。
 - 未显式切换时，普通对话结束后默认在 30 秒无活动时自动显示 Dashboard。
+- B 单击循环总览、仅日程、仅工作记录；B 双击进入/退出语音，返回最近选中的页面。
+- `self.dashboard.set_view` 的 `overview`、`schedule`、`log` 分别选择三页；语音选择页面后立即退出对话。
+- 启动连接失败时单击 B 仍进入配网，没有新增长按配网。
 - 录音、播放、唤醒、打断没有明显退化。
 - 观察峰值内存与长时间运行稳定性。
 - 单独验证分区烧录和 OTA 后再把版本标记为 hardware verified。

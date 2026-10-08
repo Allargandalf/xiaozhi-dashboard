@@ -1,8 +1,9 @@
 # LCKFB SZPI ESP32-S3 Dashboard
 
 This is an independent firmware variant of the LCKFB SZPI ESP32-S3 board. It keeps the
-upstream display, touch, camera, audio, AEC, Wi-Fi provisioning, xiaozhi.me protocol, and
-press-to-talk behavior, while adding an idle dashboard and two device MCP tools.
+upstream display, touch, camera, audio, AEC, Wi-Fi provisioning, and xiaozhi.me protocol,
+while adding a three-page light dashboard and two device MCP tools. B now controls
+dashboard pages and voice conversations instead of press-to-talk gestures or AEC switching.
 
 ## Build identity
 
@@ -48,11 +49,16 @@ whether a token is set; it never prints the token.
 
 ## Runtime behavior
 
-- Idle state shows today's schedule and work log. Listening, speaking, connection,
+- Idle state shows the selected overview, schedule, or work-record page. Listening, speaking, connection,
   provisioning, errors, and upgrades use the original assistant UI.
-- `self.dashboard.set_view` selects `assistant` or `dashboard`. Selecting `dashboard`
-  ends the active conversation and returns immediately; otherwise an ordinary
-  conversation returns to the dashboard after 30 seconds without activity.
+- B single-click cycles overview → schedule → work records. B double-click starts or
+  ends a voice conversation. A single click during a conversation ends it and shows the
+  next page. The upstream single-click provisioning action during startup remains;
+  no long-press provisioning action is added.
+- `self.dashboard.set_view` accepts `assistant`, `dashboard`, `overview`, `schedule`,
+  and `log`. Selecting a dashboard view ends the active conversation immediately.
+  `dashboard` preserves the last page; an ordinary conversation returns to that page
+  after 30 seconds without activity.
 - `self.dashboard.add_entry` validates and queues a bounded write. Its immediate response
   says `queued` and `saved:false`; it never claims that the computer has persisted data.
 - Schedule and work-log data use the USB serial bridge by default. The optional HTTP
@@ -62,6 +68,7 @@ whether a token is set; it never prints the token.
   connected and every 30 seconds when using the HTTP compatibility mode. An uncertain
   write is never retried through the other transport.
 
-This variant is compile-tested without hardware. Display orientation, UART wiring and
-USB synchronization, Wi-Fi reachability, MCP discovery, audio coexistence, memory peaks,
-OTA, and restart behavior still require the physical board.
+The previous USB/idle-return version was built, flashed, and checked on the physical
+board. Validation of the current page/button changes is recorded in the root BUILD.md.
+First-time provisioning, voice writes, long-running audio, peak memory, and OTA still
+require physical verification.

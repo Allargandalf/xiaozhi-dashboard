@@ -23,7 +23,11 @@ int main() {
     assert(!IsValidType("note"));
     assert(IsValidView("assistant"));
     assert(IsValidView("dashboard"));
+    assert(IsValidView("overview"));
+    assert(IsValidView("schedule"));
+    assert(IsValidView("log"));
     assert(!IsValidView("home"));
+    assert(!IsValidView("schedules"));
 
     assert(TrimTitle("  mentor meeting\t") == "mentor meeting");
     assert(TrimTitle(" \r\n\t").empty());

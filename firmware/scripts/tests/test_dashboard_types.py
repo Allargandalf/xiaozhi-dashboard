@@ -58,6 +58,11 @@ class DashboardBoardConfigTests(unittest.TestCase):
             "dashboard_inactivity_policy_host_test.cc", "dashboard_inactivity_policy_test"
         )
 
+    def test_button_policy_distinguishes_single_double_and_busy_states(self):
+        self.compile_and_run_host_test(
+            "dashboard_button_policy_host_test.cc", "dashboard_button_policy_test"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,19 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>320×240 Dashboard preview</title>
+  <title>320×240 Dashboard three-page preview</title>
   <style>
     :root {
-      color-scheme: dark;
-      --background: #08131f;
-      --surface: #102331;
-      --border: #1d3a47;
-      --primary: #e7eef3;
-      --secondary: #8ea5b3;
-      --muted: #6f8794;
-      --teal: #2dd4bf;
-      --teal-surface: #143439;
-      --warm: #f2b56b;
+      color-scheme: light;
+      --background: #f7f3ea;
+      --surface: #ffffff;
+      --border: #ded8cb;
+      --primary: #27302d;
+      --secondary: #68736f;
+      --muted: #99a09d;
+      --schedule: #2f7d67;
+      --schedule-time: #3b6fa7;
+      --schedule-surface: #e8f4ee;
+      --log: #b8673e;
+      --log-surface: #f8ece3;
     }
 
     * {
@@ -31,13 +33,15 @@
     body {
       display: grid;
       place-items: center;
-      background: #050b11;
+      background: #e7e2d8;
       color: var(--primary);
       font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
     }
 
     main {
       display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
       gap: 28px;
       padding: 28px;
     }
@@ -48,27 +52,28 @@
 
     figcaption {
       margin-bottom: 9px;
-      color: #8ea5b3;
-      font-size: 12px;
-      letter-spacing: .08em;
+      color: #59635f;
+      font-size: 13px;
+      letter-spacing: .04em;
     }
 
     .screen {
       display: grid;
-      grid-template-rows: 42px minmax(0, 1fr) 20px;
+      grid-template-rows: 38px 151px 23px;
       gap: 6px;
       width: 320px;
       height: 240px;
       padding: 8px;
       overflow: hidden;
       background: var(--background);
+      box-shadow: 0 8px 25px rgb(39 48 45 / 16%);
       font-size: 16px;
       line-height: 20px;
       -webkit-font-smoothing: none;
       font-synthesis: none;
     }
 
-    .header {
+    .topbar {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -87,14 +92,13 @@
     .date-rail {
       flex: 0 0 3px;
       width: 3px;
-      height: 28px;
+      height: 26px;
       border-radius: 99px;
-      background: var(--teal);
+      background: var(--schedule);
     }
 
     .date {
       overflow: hidden;
-      color: var(--primary);
       white-space: nowrap;
       text-overflow: ellipsis;
     }
@@ -102,31 +106,35 @@
     .clock {
       display: grid;
       place-items: center;
-      flex: 0 0 82px;
-      width: 82px;
-      height: 36px;
-      border: 1px solid #23605f;
+      flex: 0 0 76px;
+      width: 76px;
+      height: 32px;
+      border: 1px solid #b8d5c8;
       border-radius: 9px;
-      background: var(--teal-surface);
-      color: #f4f7f9;
-      font-size: 20px;
+      background: var(--schedule-surface);
+      color: var(--primary);
       letter-spacing: 1px;
     }
 
-    .cards {
+    .page {
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .overview {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 6px;
-      min-height: 0;
     }
 
     .card {
       display: grid;
-      grid-template-rows: 22px repeat(4, 22px);
+      grid-template-rows: 23px repeat(4, 23px);
       align-content: start;
-      gap: 3px;
+      gap: 2px;
       min-width: 0;
-      padding: 7px;
+      height: 151px;
+      padding: 6px;
       overflow: hidden;
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -140,14 +148,12 @@
       min-width: 0;
     }
 
-    .schedule .card-head,
-    .schedule .prefix {
-      color: var(--teal);
+    .schedule .card-head {
+      color: var(--schedule);
     }
 
-    .logs .card-head,
-    .logs .prefix {
-      color: var(--warm);
+    .logs .card-head {
+      color: var(--log);
     }
 
     .count {
@@ -156,11 +162,19 @@
 
     .data-row {
       display: grid;
-      grid-template-columns: 48px minmax(0, 1fr);
+      grid-template-columns: 44px minmax(0, 1fr);
       align-items: center;
       gap: 5px;
       min-width: 0;
-      height: 22px;
+      height: 23px;
+    }
+
+    .schedule .prefix {
+      color: var(--schedule-time);
+    }
+
+    .logs .prefix {
+      color: var(--log);
     }
 
     .prefix,
@@ -170,110 +184,150 @@
       text-overflow: ellipsis;
     }
 
-    .title {
-      color: var(--primary);
+    .detail-card {
+      grid-template-rows: 23px repeat(4, 26px);
     }
 
-    .empty-card {
-      grid-template-rows: 22px 1fr;
+    .detail-card .data-row {
+      grid-template-columns: 52px minmax(0, 1fr);
+      height: 26px;
+      padding: 0 6px;
+      border-radius: 6px;
     }
 
-    .empty {
-      align-self: center;
-      padding: 0 4px 17px;
-      color: var(--muted);
-      text-align: center;
-      line-height: 22px;
+    .detail-card.schedule .data-row {
+      background: var(--schedule-surface);
+    }
+
+    .detail-card.logs .data-row {
+      background: var(--log-surface);
     }
 
     .footer {
       display: flex;
       align-items: center;
-      justify-content: flex-end;
-      gap: 6px;
+      justify-content: space-between;
       min-width: 0;
       color: var(--secondary);
     }
 
+    .page-indicator,
+    .usb-status {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      gap: 5px;
+    }
+
+    .page-name {
+      width: 34px;
+    }
+
+    .dot,
     .status-dot {
       flex: 0 0 6px;
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: var(--teal);
+      background: var(--border);
+    }
+
+    .dot.active,
+    .status-dot {
+      background: var(--schedule);
+    }
+
+    .schedule-page .dot.active {
+      background: var(--schedule-time);
+    }
+
+    .log-page .dot.active {
+      background: var(--log);
     }
 
     .status {
-      max-width: 78%;
+      max-width: 145px;
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
     }
-
-    .offline .status-dot {
-      background: var(--warm);
-    }
   </style>
 </head>
 <body>
-  <main aria-label="Dashboard firmware states">
+  <main aria-label="Dashboard firmware pages">
     <figure>
-      <figcaption>USB 已连接 · 代表数据</figcaption>
-      <section class="screen" aria-label="已连接的仪表盘">
-        <header class="header">
-          <div class="date-group">
-            <span class="date-rail" aria-hidden="true"></span>
-            <span class="date">10月06日 周二</span>
-          </div>
+      <figcaption>第 1 页 · 总览</figcaption>
+      <section class="screen" aria-label="总览页">
+        <header class="topbar">
+          <div class="date-group"><span class="date-rail" aria-hidden="true"></span><span class="date">10月08日 周四</span></div>
           <time class="clock">08:42</time>
         </header>
-
-        <div class="cards">
+        <div class="page overview">
           <section class="card schedule">
             <header class="card-head"><span>今日日程</span><span class="count">4</span></header>
-            <div class="data-row"><time class="prefix">09:00</time><span class="title">站会</span></div>
-            <div class="data-row"><time class="prefix">11:30</time><span class="title">评审</span></div>
-            <div class="data-row"><time class="prefix">15:00</time><span class="title">客户会</span></div>
-            <div class="data-row"><span class="prefix">全天</span><span class="title">发布</span></div>
+            <div class="data-row"><time class="prefix">09:00</time><span class="title">团队站会</span></div>
+            <div class="data-row"><time class="prefix">11:30</time><span class="title">项目评审</span></div>
+            <div class="data-row"><time class="prefix">15:00</time><span class="title">客户沟通</span></div>
+            <div class="data-row"><span class="prefix">全天</span><span class="title">版本发布</span></div>
           </section>
-
           <section class="card logs">
             <header class="card-head"><span>工作记录</span><span class="count">4</span></header>
-            <div class="data-row"><time class="prefix">10/06</time><span class="title">周报</span></div>
-            <div class="data-row"><time class="prefix">10/06</time><span class="title">原型</span></div>
-            <div class="data-row"><time class="prefix">10/06</time><span class="title">回归</span></div>
-            <div class="data-row"><time class="prefix">10/06</time><span class="title">文档</span></div>
+            <div class="data-row"><time class="prefix">10/08</time><span class="title">完成周报</span></div>
+            <div class="data-row"><time class="prefix">10/08</time><span class="title">更新原型</span></div>
+            <div class="data-row"><time class="prefix">10/08</time><span class="title">回归测试</span></div>
+            <div class="data-row"><time class="prefix">10/08</time><span class="title">整理文档</span></div>
           </section>
         </div>
-
-        <footer class="footer"><span class="status-dot" aria-hidden="true"></span><span class="status">USB 已连接</span></footer>
+        <footer class="footer">
+          <div class="page-indicator"><span class="page-name">总览</span><span class="dot active"></span><span class="dot"></span><span class="dot"></span></div>
+          <div class="usb-status"><span class="status-dot"></span><span class="status">USB 已连接</span></div>
+        </footer>
       </section>
     </figure>
 
     <figure>
-      <figcaption>电脑未连接 · 首次同步</figcaption>
-      <section class="screen offline" aria-label="未连接的仪表盘">
-        <header class="header">
-          <div class="date-group">
-            <span class="date-rail" aria-hidden="true"></span>
-            <span class="date">10月06日 周二</span>
-          </div>
+      <figcaption>第 2 页 · 日程</figcaption>
+      <section class="screen schedule-page" aria-label="日程页">
+        <header class="topbar">
+          <div class="date-group"><span class="date-rail" aria-hidden="true"></span><span class="date">10月08日 周四</span></div>
           <time class="clock">08:42</time>
         </header>
-
-        <div class="cards">
-          <section class="card schedule empty-card">
-            <header class="card-head"><span>今日日程</span><span class="count">0</span></header>
-            <div class="empty">等待日程同步</div>
-          </section>
-
-          <section class="card logs empty-card">
-            <header class="card-head"><span>工作记录</span><span class="count">0</span></header>
-            <div class="empty">等待工作记录同步</div>
+        <div class="page">
+          <section class="card detail-card schedule">
+            <header class="card-head"><span>今日日程</span><span class="count">4</span></header>
+            <div class="data-row"><time class="prefix">09:00</time><span class="title">团队站会 · 同步迭代风险</span></div>
+            <div class="data-row"><time class="prefix">11:30</time><span class="title">项目评审 · 确认交付范围</span></div>
+            <div class="data-row"><time class="prefix">15:00</time><span class="title">客户沟通 · 演示新版流程</span></div>
+            <div class="data-row"><span class="prefix">全天</span><span class="title">版本发布 · 观察线上指标</span></div>
           </section>
         </div>
+        <footer class="footer">
+          <div class="page-indicator"><span class="page-name">日程</span><span class="dot"></span><span class="dot active"></span><span class="dot"></span></div>
+          <div class="usb-status"><span class="status-dot"></span><span class="status">USB 已连接</span></div>
+        </footer>
+      </section>
+    </figure>
 
-        <footer class="footer"><span class="status-dot" aria-hidden="true"></span><span class="status">连接电脑以同步</span></footer>
+    <figure>
+      <figcaption>第 3 页 · 工作记录</figcaption>
+      <section class="screen log-page" aria-label="工作记录页">
+        <header class="topbar">
+          <div class="date-group"><span class="date-rail" aria-hidden="true"></span><span class="date">10月08日 周四</span></div>
+          <time class="clock">08:42</time>
+        </header>
+        <div class="page">
+          <section class="card detail-card logs">
+            <header class="card-head"><span>工作记录</span><span class="count">4</span></header>
+            <div class="data-row"><time class="prefix">10/08</time><span class="title">完成周报 · 汇总本周进展</span></div>
+            <div class="data-row"><time class="prefix">10/08</time><span class="title">更新原型 · 补齐异常状态</span></div>
+            <div class="data-row"><time class="prefix">10/08</time><span class="title">回归测试 · 验证同步流程</span></div>
+            <div class="data-row"><time class="prefix">10/08</time><span class="title">整理文档 · 补充部署说明</span></div>
+          </section>
+        </div>
+        <footer class="footer">
+          <div class="page-indicator"><span class="page-name">记录</span><span class="dot"></span><span class="dot"></span><span class="dot active"></span></div>
+          <div class="usb-status"><span class="status-dot"></span><span class="status">USB 已连接</span></div>
+        </footer>
       </section>
     </figure>
   </main>
