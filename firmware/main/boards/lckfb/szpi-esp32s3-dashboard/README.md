@@ -16,12 +16,25 @@ the dashboard image from sharing OTA identity with the upstream `lichuang-dev` i
 
 ## Runtime companion configuration
 
-The release image contains no secret. Its fallback URL is
-`http://xiaozhi-dashboard.local:8765` and its fallback token is empty. Runtime values are
-stored in NVS under namespace `dashboard`, keys `url` and `token`.
+The primary companion transport is the board's UART0 USB-to-UART connection at 115200
+8N1. Install `pyserial`, keep a data-capable Type-C cable connected, and run the web
+service plus serial bridge from the repository root, replacing `COM4` with the board's
+actual port:
 
-Connect to the board's UART0 USB-to-UART port at 115200 8N1. The input path is a bounded
-raw reader: it does not echo commands and does not retain command history.
+```powershell
+python -m pip install pyserial
+.\scripts\start_companion.ps1 -SerialPort COM4
+```
+
+This USB path does not require the board and computer to share a LAN. Wi-Fi remains in
+use for Xiaozhi conversations. The release image also retains HTTP over Wi-Fi as a
+legacy, explicitly configured compatibility mode; it is not automatic USB failover.
+It contains no secret; the fallback URL is
+`http://xiaozhi-dashboard.local:8765` and its fallback token is empty. Runtime fallback
+values are stored in NVS under namespace `dashboard`, keys `url` and `token`.
+
+For fallback configuration, connect to UART0 USB-to-UART at 115200 8N1. The input path
+is a bounded raw reader: it does not echo commands and does not retain command history.
 
 ```text
 dashboard_config set http://192.168.1.20:8765 your-token
@@ -37,14 +50,18 @@ whether a token is set; it never prints the token.
 
 - Idle state shows today's schedule and work log. Listening, speaking, connection,
   provisioning, errors, and upgrades use the original assistant UI.
-- `self.dashboard.set_view` selects `assistant` or `dashboard`. A dashboard request made
-  during voice activity is deferred until idle.
+- `self.dashboard.set_view` selects `assistant` or `dashboard`. Selecting `dashboard`
+  ends the active conversation and returns immediately; otherwise an ordinary
+  conversation returns to the dashboard after 30 seconds without activity.
 - `self.dashboard.add_entry` validates and queues a bounded write. Its immediate response
   says `queued` and `saved:false`; it never claims that the computer has persisted data.
-- The HTTP worker runs at low priority, has a four-job queue, uses four-second request
+- Schedule and work-log data use the USB serial bridge by default. The optional HTTP
+  fallback worker runs at low priority, has a four-job queue, uses four-second request
   timeouts, retries an uncertain POST once with the same idempotency key, and limits GET
-  responses to 16 KiB.
+  responses to 16 KiB. The device refreshes about every five seconds while USB is
+  connected and every 30 seconds when using the HTTP compatibility mode. An uncertain
+  write is never retried through the other transport.
 
-This variant is compile-tested without hardware. Display orientation, UART wiring,
-Wi-Fi reachability, MCP discovery, audio coexistence, memory peaks, OTA, and restart
-behavior still require the physical board.
+This variant is compile-tested without hardware. Display orientation, UART wiring and
+USB synchronization, Wi-Fi reachability, MCP discovery, audio coexistence, memory peaks,
+OTA, and restart behavior still require the physical board.

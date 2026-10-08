@@ -46,7 +46,11 @@ Pop-Location
 
 固件测试覆盖官方构建脚本与 Dashboard 参数/协议逻辑；companion 测试覆盖 SQLite 和 HTTP API；顶层测试覆盖发布包校验与串口配置协议。
 
+Windows 运行官方 CI 选择测试时，需要 Git for Windows 的 `bash.exe` 位于 `PATH`，并设置 `PYTHONUTF8=1`，避免中文源码被按系统默认编码读取。
+
 ## 生成 v0.1 发布目录
+
+下面是历史 v0.1 打包流程。当前 USB 开发版只同步源码，未生成或发布新的 GitHub Release。
 
 保持 ESP-IDF 环境处于激活状态。`release/` 除随仓库保存的 `README.md` 和 `release_notes.md` 外不能残留旧的生成文件：
 
@@ -88,3 +92,14 @@ CI 或本地编译通过只说明代码和镜像结构通过检查，不等于�
 - 静态 DIRAM 158,229 / 341,760 bytes（46.3%）。
 
 这些数字来自链接/镜像产物。PSRAM 实际容量、运行时峰值内存、屏幕、网络、音频和 OTA 仍需真机测量。
+
+## 2026-10-08 USB 开发版验证
+
+- 固件主机测试 102 项、companion HTTP/USB 测试 13 项、顶层工具测试 12 项通过。
+- ESP-IDF 6.0.1：Dashboard ESP32-S3 完整构建和 ESP32 `bread-compact-esp32` OLED 代表路径构建通过；后者在独立复制目录构建，未改变 Dashboard 的构建配置。
+- Dashboard 应用镜像 2,829,088 bytes，app 分区剩余约 31%；assets 镜像 1,374,165 bytes，位于 8 MiB 分区容量内。
+- 实机识别为 ESP32-S3、16 MiB Flash、8 MiB PSRAM；在 COM4 以 460800 baud 烧录并校验，原分区表一致，NVS 未被写入。
+- Type-C 联调中真实板子连续发起四次读取，电脑均返回 200；设备报告 `usb_connected=true`，用户确认屏幕显示已连接。正式 companion 在本机后台运行，数据库为 `companion/data/dashboard.db`。
+- 最终烧录后正常启动，自动连回 `xiaozhi` 热点并取得 IP，HTTPS 版本检查及 MQTT 连接成功，两个 Dashboard MCP 工具完成设备端注册。
+- 30 秒无交互回退、切换 MCP 工具后立即退出及停止剩余播放已完成逻辑检查与编译；语音端到端行为、配网、OTA、长时间音频稳定性和峰值内存仍需实机验证。
+- 只推送源代码和文档，未发布新版二进制。

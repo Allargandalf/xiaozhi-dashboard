@@ -11,6 +11,30 @@ BOARD = ROOT / "main/boards/lckfb/szpi-esp32s3-dashboard"
 
 
 class DashboardBoardConfigTests(unittest.TestCase):
+    def compile_and_run_host_test(self, source_name, executable_name, link_cjson=False):
+        build_dir = ROOT / "build" / "host-tests"
+        build_dir.mkdir(parents=True, exist_ok=True)
+        source = ROOT / "scripts/tests" / source_name
+        executable = build_dir / (
+            f"{executable_name}.exe" if os.name == "nt" else executable_name
+        )
+        command = shlex.split(os.environ.get("CXX", "c++")) + [
+            "-x",
+            "c++",
+            "-std=c++20",
+            f"-I{BOARD}",
+            f"-I{ROOT / 'managed_components/espressif__cjson/cJSON'}",
+            str(source),
+        ]
+        if link_cjson:
+            command.append(str(ROOT / "managed_components/espressif__cjson/cJSON/cJSON.c"))
+        command.extend(["-o", str(executable)])
+        environment = os.environ.copy()
+        environment.setdefault("ZIG_GLOBAL_CACHE_DIR", str(build_dir / "zig-global-cache"))
+        environment.setdefault("ZIG_LOCAL_CACHE_DIR", str(build_dir / "zig-local-cache"))
+        subprocess.run(command, check=True, cwd=build_dir, env=environment)
+        subprocess.run([executable], check=True, cwd=build_dir)
+
     def test_variant_has_independent_ota_identity_and_safe_defaults(self):
         config = json.loads((BOARD / "config.json").read_text(encoding="utf-8"))
         self.assertEqual(config["type"], "lichuang-dev-dashboard")
@@ -25,28 +49,14 @@ class DashboardBoardConfigTests(unittest.TestCase):
         self.assertRegex(kconfig, r"config DASHBOARD_SERVICE_TOKEN[\s\S]*?default \"\"")
 
     def test_portable_validation_logic(self):
-        build_dir = ROOT / "build" / "host-tests"
-        build_dir.mkdir(parents=True, exist_ok=True)
-        source = ROOT / "scripts/tests/dashboard_types_host_test.cc"
-        executable = build_dir / (
-            "dashboard_types_test.exe" if os.name == "nt" else "dashboard_types_test"
+        self.compile_and_run_host_test(
+            "dashboard_types_host_test.cc", "dashboard_types_test", link_cjson=True
         )
-        command = shlex.split(os.environ.get("CXX", "c++")) + [
-            "-x",
-            "c++",
-            "-std=c++20",
-            f"-I{BOARD}",
-            f"-I{ROOT / 'managed_components/espressif__cjson/cJSON'}",
-            str(source),
-            str(ROOT / "managed_components/espressif__cjson/cJSON/cJSON.c"),
-            "-o",
-            str(executable),
-        ]
-        environment = os.environ.copy()
-        environment.setdefault("ZIG_GLOBAL_CACHE_DIR", str(build_dir / "zig-global-cache"))
-        environment.setdefault("ZIG_LOCAL_CACHE_DIR", str(build_dir / "zig-local-cache"))
-        subprocess.run(command, check=True, cwd=build_dir, env=environment)
-        subprocess.run([executable], check=True, cwd=build_dir)
+
+    def test_inactivity_policy_transitions(self):
+        self.compile_and_run_host_test(
+            "dashboard_inactivity_policy_host_test.cc", "dashboard_inactivity_policy_test"
+        )
 
 
 if __name__ == "__main__":

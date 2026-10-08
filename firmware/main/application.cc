@@ -56,7 +56,16 @@ Application::~Application() {
     vEventGroupDelete(event_group_);
 }
 
-bool Application::SetDeviceState(DeviceState state) { return state_machine_.TransitionTo(state); }
+bool Application::SetDeviceState(DeviceState state) {
+    const auto previous = GetDeviceState();
+    const bool changed = state_machine_.TransitionTo(state);
+    if (changed && previous == kDeviceStateIdle &&
+        (state == kDeviceStateConnecting || state == kDeviceStateListening)) {
+        conversation_generation_.fetch_add(1);
+        conversation_ended_.store(false);
+    }
+    return changed;
+}
 
 void Application::Initialize() {
     auto& board = Board::GetInstance();
@@ -182,7 +191,8 @@ void Application::Run() {
         MAIN_EVENT_VAD_CHANGE | MAIN_EVENT_CLOCK_TICK | MAIN_EVENT_ERROR |
         MAIN_EVENT_NETWORK_CONNECTED | MAIN_EVENT_NETWORK_DISCONNECTED | MAIN_EVENT_TOGGLE_CHAT |
         MAIN_EVENT_START_LISTENING | MAIN_EVENT_STOP_LISTENING | MAIN_EVENT_ACTIVATION_DONE |
-        MAIN_EVENT_STATE_CHANGED | MAIN_EVENT_PLAYBACK_DRAINED;
+        MAIN_EVENT_STATE_CHANGED | MAIN_EVENT_PLAYBACK_DRAINED | MAIN_EVENT_END_CONVERSATION |
+        MAIN_EVENT_END_CONVERSATION_IF_SILENT;
 
     while (true) {
         auto bits = xEventGroupWaitBits(event_group_, ALL_EVENTS, pdTRUE, pdFALSE, portMAX_DELAY);
@@ -268,6 +278,22 @@ void Application::Run() {
             lock.unlock();
             for (auto& task : tasks) {
                 task();
+            }
+        }
+
+        // A scheduled MCP tool callback can enqueue its response and request conversation exit in
+        // the same pass. Carry the exit to the next pass so that newly scheduled response work is
+        // sent before its transport is closed. This also covers an inactivity exit that was
+        // already pending when the tool call arrived.
+        const EventBits_t end_bits =
+            bits & (MAIN_EVENT_END_CONVERSATION | MAIN_EVENT_END_CONVERSATION_IF_SILENT);
+        if (end_bits != 0) {
+            if (bits & MAIN_EVENT_SCHEDULE) {
+                xEventGroupSetBits(event_group_, end_bits);
+            } else if (end_bits & MAIN_EVENT_END_CONVERSATION) {
+                HandleEndConversationEvent(false);
+            } else {
+                HandleEndConversationEvent(true);
             }
         }
 
@@ -569,7 +595,11 @@ void Application::InitializeProtocol() {
 
     protocol_->OnAudioChannelClosed([this, &board]() {
         board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
-        Schedule([this]() {
+        const auto generation = conversation_generation_.load();
+        Schedule([this, generation]() {
+            if (generation != conversation_generation_.load()) {
+                return;
+            }
             auto display = Board::GetInstance().GetDisplay();
             display->SetChatMessage("system", "");
             SetDeviceState(kDeviceStateIdle);
@@ -622,12 +652,24 @@ void Application::InitializeProtocol() {
                 return;
             }
             if (strcmp(state->valuestring, "start") == 0) {
-                Schedule([this]() {
+                const auto generation = conversation_generation_.load();
+                Schedule([this, generation]() {
+                    // A close can race with an already queued TTS start. Do not let that stale
+                    // event reopen the conversation after EndConversation() has returned to idle.
+                    if (conversation_ended_.load() ||
+                        generation != conversation_generation_.load()) {
+                        return;
+                    }
                     aborted_ = false;
                     SetDeviceState(kDeviceStateSpeaking);
                 });
             } else if (strcmp(state->valuestring, "stop") == 0) {
-                Schedule([this]() {
+                const auto generation = conversation_generation_.load();
+                Schedule([this, generation]() {
+                    if (conversation_ended_.load() ||
+                        generation != conversation_generation_.load()) {
+                        return;
+                    }
                     if (GetDeviceState() == kDeviceStateSpeaking) {
                         if (listening_mode_ == kListeningModeManualStop) {
                             SetDeviceState(kDeviceStateIdle);
@@ -708,10 +750,9 @@ void Application::InitializeProtocol() {
             if (cJSON_IsObject(payload)) {
                 CJsonStringUniquePtr payload_json(cJSON_PrintUnformatted(payload));
                 if (payload_json) {
-                    Schedule(
-                        [this, display, payload_str = std::string(payload_json.get())]() {
-                            display->SetChatMessage("system", payload_str.c_str());
-                        });
+                    Schedule([this, display, payload_str = std::string(payload_json.get())]() {
+                        display->SetChatMessage("system", payload_str.c_str());
+                    });
                 }
             } else {
                 ESP_LOGW(TAG, "Invalid custom message format: missing payload");
@@ -776,6 +817,17 @@ void Application::ToggleChatState() { xEventGroupSetBits(event_group_, MAIN_EVEN
 void Application::StartListening() { xEventGroupSetBits(event_group_, MAIN_EVENT_START_LISTENING); }
 
 void Application::StopListening() { xEventGroupSetBits(event_group_, MAIN_EVENT_STOP_LISTENING); }
+
+void Application::EndConversation() {
+    explicit_exit_conversation_generation_.store(conversation_generation_.load());
+    xEventGroupSetBits(event_group_, MAIN_EVENT_END_CONVERSATION);
+}
+
+void Application::EndConversationIfSilent(uint32_t voice_generation) {
+    silent_exit_conversation_generation_.store(conversation_generation_.load());
+    silent_exit_voice_generation_.store(voice_generation);
+    xEventGroupSetBits(event_group_, MAIN_EVENT_END_CONVERSATION_IF_SILENT);
+}
 
 void Application::HandleToggleChatEvent() {
     auto state = GetDeviceState();
@@ -892,6 +944,42 @@ void Application::HandleStopListeningEvent() {
         }
         SetDeviceState(kDeviceStateIdle);
     }
+}
+
+void Application::HandleEndConversationEvent(bool require_silence) {
+    const auto expected_generation = require_silence
+                                         ? silent_exit_conversation_generation_.load()
+                                         : explicit_exit_conversation_generation_.load();
+    if (expected_generation != conversation_generation_.load()) {
+        return;
+    }
+    const auto state = GetDeviceState();
+    if (require_silence &&
+        (state != kDeviceStateListening || audio_service_.IsVoiceDetected() ||
+         audio_service_.VoiceActivityGeneration() != silent_exit_voice_generation_.load() ||
+         !audio_service_.IsPlaybackIdle())) {
+        return;
+    }
+    if (state != kDeviceStateConnecting && state != kDeviceStateListening &&
+        state != kDeviceStateSpeaking) {
+        return;
+    }
+
+    ESP_LOGI(TAG, "Ending current conversation");
+    conversation_ended_.store(true);
+    conversation_generation_.fetch_add(1);
+    pending_listening_start_ = false;
+    if (state == kDeviceStateSpeaking) {
+        AbortSpeaking(kAbortReasonNone);
+    } else if (state == kDeviceStateListening && protocol_) {
+        protocol_->SendStopListening();
+    }
+
+    audio_service_.ResetDecoder();
+    if (protocol_) {
+        protocol_->CloseAudioChannel();
+    }
+    SetDeviceState(kDeviceStateIdle);
 }
 
 void Application::HandleWakeWordDetectedEvent() {

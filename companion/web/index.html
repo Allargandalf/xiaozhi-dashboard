@@ -42,10 +42,28 @@
     .status { min-height: 22px; margin: 12px 0 0; color: #8fd0a5; }
     .status.error { color: #ff9caa; }
     .mock-wrap { margin-top: 22px; }
-    .mock { width: 320px; height: 240px; max-width: 100%; margin: 0 auto; background: #071321; border: 8px solid #28313a; border-radius: 15px; padding: 12px; overflow: hidden; box-shadow: inset 0 0 0 1px #44515d; }
-    .mock-title { display: flex; justify-content: space-between; color: #87ccff; font-size: 13px; margin-bottom: 8px; }
-    .mock-section { font-size: 11px; color: #7f94aa; margin: 8px 0 4px; }
-    .mock-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; padding: 3px 0; border-bottom: 1px solid #172a3d; }
+    .mock-shell { width: min(336px, 100%); margin: 0 auto; padding: 8px; border-radius: 16px; background: #26313a; box-shadow: 0 16px 34px rgba(0, 0, 0, .3), inset 0 0 0 1px #46535d; }
+    .mock { width: 320px; max-width: 100%; aspect-ratio: 4 / 3; margin: 0 auto; padding: 8px; overflow: hidden; display: grid; grid-template-rows: 42px minmax(0, 1fr) 20px; gap: 6px; color: #e7eef3; background: #08131f; border-radius: 5px; font: 16px/20px "Noto Sans SC", "Microsoft YaHei", sans-serif; }
+    .mock-header { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .mock-date-block { min-width: 0; display: flex; flex: 1; align-items: center; gap: 8px; }
+    .mock-date-rail { width: 3px; height: 28px; flex: 0 0 auto; border-radius: 2px; background: #2dd4bf; box-shadow: 0 0 12px rgba(45, 212, 191, .3); }
+    .mock-date { min-width: 0; flex: 1; overflow: hidden; color: #e7eef3; white-space: nowrap; text-overflow: ellipsis; }
+    .mock-clock { display: grid; place-items: center; flex: 0 0 82px; width: 82px; height: 36px; border: 1px solid #23605f; border-radius: 9px; color: #f4f7f9; background: #143439; font-size: 20px; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+    .mock-columns { min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .mock-card { min-width: 0; min-height: 0; padding: 7px; overflow: hidden; border: 1px solid #1d3a47; border-radius: 10px; background: #102331; }
+    .mock-card-title { height: 22px; display: flex; align-items: center; justify-content: space-between; gap: 5px; color: #2dd4bf; }
+    .mock-card.logs .mock-card-title { color: #f2b56b; }
+    .mock-count { color: #8ea5b3; }
+    .mock-rows { display: grid; gap: 3px; margin-top: 3px; }
+    .mock-line { min-width: 0; height: 22px; display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: center; gap: 5px; color: #e7eef3; }
+    .mock-prefix { overflow: hidden; color: #2dd4bf; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+    .mock-card.logs .mock-prefix { color: #f2b56b; }
+    .mock-entry-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mock-line.mock-empty { height: 88px; display: grid; place-items: center; grid-template-columns: 1fr; padding: 0 4px 17px; color: #6f8794; line-height: 22px; text-align: center; white-space: normal; }
+    .mock-footer { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 6px; color: #8ea5b3; }
+    .mock-status-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: #f2b56b; box-shadow: 0 0 7px rgba(242, 181, 107, .45); }
+    .mock-footer.synced .mock-status-dot { background: #2dd4bf; box-shadow: 0 0 7px rgba(45, 212, 191, .45); }
+    .mock-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .empty { color: #6f8295; font-size: 13px; padding: 12px 0; }
     dialog { width: min(420px, calc(100% - 28px)); border: 1px solid #455b70; border-radius: 13px; background: #17212d; color: #eef6ff; padding: 20px; }
     dialog::backdrop { background: rgba(0,0,0,.6); }
@@ -79,10 +97,21 @@
         </div>
         <div class="mock-wrap">
           <h2>320 × 240 设备预览</h2>
-          <div class="mock">
-            <div class="mock-title"><strong>Dashboard</strong><span id="mockDate"></span></div>
-            <div class="mock-section">日程</div><div id="mockSchedules"></div>
-            <div class="mock-section">工作日志</div><div id="mockLogs"></div>
+          <div class="mock-shell">
+            <div class="mock" aria-label="设备 Dashboard 布局预览">
+              <div class="mock-header">
+                <div class="mock-date-block">
+                  <span class="mock-date-rail"></span>
+                  <span class="mock-date" id="mockDate"></span>
+                </div>
+                <span class="mock-clock" id="mockClock">待校时</span>
+              </div>
+              <div class="mock-columns">
+                <section class="mock-card schedules"><div class="mock-card-title"><span>今日日程</span><span class="mock-count" id="mockScheduleCount">0</span></div><div class="mock-rows" id="mockSchedules"></div></section>
+                <section class="mock-card logs"><div class="mock-card-title"><span>工作记录</span><span class="mock-count" id="mockLogCount">0</span></div><div class="mock-rows" id="mockLogs"></div></section>
+              </div>
+              <div class="mock-footer" id="mockFooter"><span class="mock-status-dot"></span><span class="mock-status" id="mockStatus">连接电脑以同步</span></div>
+            </div>
           </div>
         </div>
       </section>
@@ -117,6 +146,7 @@
   <script>
     const $ = id => document.getElementById(id);
     let model = { date: '', schedules: [], work_logs: [] };
+    let mockConnection = 'offline';
     let token = localStorage.getItem('dashboardToken') || '';
     const localIsoDate = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
     const escapeHtml = value => String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -146,8 +176,33 @@
       $(target).innerHTML = entries.length ? entries.map(entryHtml).join('') : '<div class="empty">暂无记录</div>';
     }
 
-    function renderMock(target, entries) {
-      $(target).innerHTML = entries.length ? entries.slice(0, 3).map(e => `<div class="mock-line">${e.time ? escapeHtml(e.time)+' ' : ''}${escapeHtml(e.title)}</div>`).join('') : '<div class="mock-line muted">暂无</div>';
+    function mockDateLabel(isoDate) {
+      const parsed = new Date(`${isoDate}T12:00:00`);
+      if (!isoDate || Number.isNaN(parsed.getTime())) return '日期待同步';
+      const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+      return `${String(parsed.getMonth() + 1).padStart(2, '0')}月${String(parsed.getDate()).padStart(2, '0')}日 ${weekdays[parsed.getDay()]}`;
+    }
+
+    function updateMockClock() {
+      const now = new Date();
+      $('mockClock').textContent = Number.isNaN(now.getTime()) ? '待校时' : `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
+
+    function renderMock(target, entries, type) {
+      if (mockConnection !== 'synced') {
+        $(target).innerHTML = `<div class="mock-line mock-empty">${type === 'schedule' ? '等待日程同步' : '等待工作记录同步'}</div>`;
+        return;
+      }
+      if (!entries.length) {
+        $(target).innerHTML = `<div class="mock-line mock-empty">${type === 'schedule' ? '今天没有安排' : '今天还没有工作记录'}</div>`;
+        return;
+      }
+      $(target).innerHTML = entries.slice(0, 4).map(entry => {
+        const prefix = type === 'schedule'
+          ? (entry.time || '全天')
+          : String(entry.date || model.date).slice(5).replace('-', '/');
+        return `<div class="mock-line"><span class="mock-prefix">${escapeHtml(prefix)}</span><span class="mock-entry-title">${escapeHtml(entry.title)}</span></div>`;
+      }).join('');
     }
 
     function render() {
@@ -155,9 +210,14 @@
       renderList('logs', model.work_logs);
       $('scheduleCount').textContent = `${model.schedules.length} 项`;
       $('logCount').textContent = `${model.work_logs.length} 项`;
-      $('mockDate').textContent = model.date.slice(5).replace('-', '/');
-      renderMock('mockSchedules', model.schedules);
-      renderMock('mockLogs', model.work_logs);
+      $('mockDate').textContent = mockDateLabel(model.date || $('date').value);
+      updateMockClock();
+      renderMock('mockSchedules', model.schedules, 'schedule');
+      renderMock('mockLogs', model.work_logs, 'log');
+      $('mockScheduleCount').textContent = mockConnection === 'synced' ? String(Math.min(model.schedules.length, 4)) : '0';
+      $('mockLogCount').textContent = mockConnection === 'synced' ? String(Math.min(model.work_logs.length, 4)) : '0';
+      $('mockFooter').classList.toggle('synced', mockConnection === 'synced');
+      $('mockStatus').textContent = mockConnection === 'synced' ? 'USB 已连接' : '连接电脑以同步';
     }
 
     function setStatus(message, error = false) { $('status').textContent = message; $('status').classList.toggle('error', error); }
@@ -167,10 +227,11 @@
       const query = useServerDate ? '' : `date=${encodeURIComponent($('date').value)}&`;
       try {
         model = await api(`/api/dashboard?${query}limit=100&content_limit=10000`);
+        mockConnection = 'synced';
         if (useServerDate) { $('date').value = model.date; resetForm(); }
         render(); setStatus('');
       }
-      catch (error) { setStatus(error.message, true); }
+      catch (error) { mockConnection = 'offline'; render(); setStatus(error.message, true); }
     }
 
     function resetForm() {
@@ -223,7 +284,8 @@
       setTimeout(load, 0);
     });
 
-    $('date').value = localIsoDate(); resetForm(); load(true);
+    $('date').value = localIsoDate(); resetForm(); render(); load(true);
+    setInterval(updateMockClock, 30000);
   </script>
 </body>
 </html>

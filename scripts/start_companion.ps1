@@ -1,11 +1,12 @@
 [CmdletBinding()]
 param(
-    [string]$ListenAddress = "0.0.0.0",
+    [string]$ListenAddress = "127.0.0.1",
     [ValidateRange(1, 65535)]
     [int]$Port = 8765,
     [string]$TokenFile,
     [string]$ConfigurePort,
-    [string]$DashboardUrl
+    [string]$DashboardUrl,
+    [string]$SerialPort
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,6 +48,9 @@ $env:DASHBOARD_TOKEN = $dashboardToken
 if ([bool]$ConfigurePort -ne [bool]$DashboardUrl) {
     throw "-ConfigurePort and -DashboardUrl must be supplied together"
 }
+if ($SerialPort -and $ConfigurePort) {
+    throw "Use -SerialPort for USB sync or -ConfigurePort/-DashboardUrl for HTTP configuration, not both"
+}
 if ($ConfigurePort) {
     & python (Join-Path $PSScriptRoot "configure_device.py") `
         --port $ConfigurePort `
@@ -59,7 +63,9 @@ if ($ConfigurePort) {
 
 Write-Host "Starting Dashboard companion on ${ListenAddress}:$Port"
 Write-Host "Reusing token from: $tokenPath"
-& python (Join-Path $projectRoot "companion\dashboard_service.py") `
-    --host $ListenAddress `
-    --port $Port
+$serviceArguments = @((Join-Path $projectRoot "companion\dashboard_service.py"), "--host", $ListenAddress, "--port", "$Port")
+if ($SerialPort) {
+    $serviceArguments += @("--serial-port", $SerialPort)
+}
+& python @serviceArguments
 exit $LASTEXITCODE

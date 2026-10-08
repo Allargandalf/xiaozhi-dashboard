@@ -296,6 +296,7 @@ void AfeAudioEngine::EnableVoiceProcessing(bool enable) {
         xEventGroupSetBits(event_group_, kVoiceProcessingEnabled);
     } else {
         xEventGroupClearBits(event_group_, kVoiceProcessingEnabled);
+        std::lock_guard<std::mutex> lock(vad_mutex_);
         is_speaking_ = false;
     }
     UpdateActiveState();
@@ -474,13 +475,22 @@ void AfeAudioEngine::HandleVoiceResult(const afe_fetch_result_t* result) {
     if (output_reset_pending_.exchange(false)) {
         output_buffer_.clear();
     }
-    if (vad_state_change_callback_) {
-        if (result->vad_state == VAD_SPEECH && !is_speaking_) {
-            is_speaking_ = true;
-            vad_state_change_callback_(true);
-        } else if (result->vad_state == VAD_SILENCE && is_speaking_) {
+    {
+        std::lock_guard<std::mutex> lock(vad_mutex_);
+        // A fetch may finish after the main task disables voice processing. Serialize with
+        // EnableVoiceProcessing(false) so that stale VAD cannot survive its final clear.
+        if ((xEventGroupGetBits(event_group_) & kVoiceProcessingEnabled) == 0) {
             is_speaking_ = false;
-            vad_state_change_callback_(false);
+            return;
+        }
+        if (vad_state_change_callback_) {
+            if (result->vad_state == VAD_SPEECH && !is_speaking_) {
+                is_speaking_ = true;
+                vad_state_change_callback_(true);
+            } else if (result->vad_state == VAD_SILENCE && is_speaking_) {
+                is_speaking_ = false;
+                vad_state_change_callback_(false);
+            }
         }
     }
     if (!output_callback_) {

@@ -4,6 +4,9 @@
 #include "config.h"
 #include "dashboard_client.h"
 #include "dashboard_display.h"
+#include "dashboard_inactivity_policy.h"
+#include "dashboard_usb.h"
+#include "dashboard_usb_protocol.h"
 #include "esp32_camera.h"
 #include "i2c_device.h"
 #include "mcp_server.h"
@@ -20,6 +23,8 @@
 #include <lvgl.h>
 
 #include <array>
+#include <atomic>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -76,7 +81,16 @@ public:
         dashboard_client_->Initialize();
         InitializeTools();
         InitializeSerialConfig();
+        InitializeInactivityTimer();
         GetBacklight()->RestoreBrightness();
+    }
+
+    ~LichuangDashboardBoard() override {
+        inactivity_alive_->store(false);
+        if (inactivity_timer_ != nullptr) {
+            esp_timer_stop(inactivity_timer_);
+            esp_timer_delete(inactivity_timer_);
+        }
     }
 
     AudioCodec* GetAudioCodec() override {
@@ -283,22 +297,36 @@ private:
         view.SetMaxLength(16);
         server.AddTool(
             "self.dashboard.set_view",
-            "Switch the display view. view must be assistant or dashboard. During listening or "
-            "speaking, a dashboard request is deferred until the device returns to idle.",
+            "Switch the display view. view must be assistant or dashboard. A dashboard request "
+            "ends the current voice conversation, then shows the dashboard.",
             PropertyList({view}), [this](const PropertyList& properties) -> ToolResult {
                 const std::string requested = properties["view"].value<std::string>();
                 if (!dashboard::IsValidView(requested)) {
                     return std::unexpected("view must be assistant or dashboard");
                 }
-                const std::string active = display_->SetPreferredView(requested);
+                auto& app = Application::GetInstance();
+                const std::string current = display_->SetPreferredView(requested);
+                const auto state = app.GetDeviceState();
+                const bool conversation_active = state == kDeviceStateConnecting ||
+                                                 state == kDeviceStateListening ||
+                                                 state == kDeviceStateSpeaking;
+                const char* status = requested == current ? "applied" : "waiting_for_idle";
                 if (requested == "dashboard") {
                     dashboard_client_->RequestRefresh();
+                    if (conversation_active) {
+                        // McpServer sends this tool result from scheduled main-loop work. The
+                        // end-conversation event is deliberately handled after scheduled work,
+                        // so the result is sent before its transport is closed.
+                        app.EndConversation();
+                        status = "ending_conversation";
+                    }
+                } else {
+                    inactivity_policy_.Restart(GetInactivityState(app), NowMs());
                 }
                 cJSON* result = cJSON_CreateObject();
                 cJSON_AddStringToObject(result, "requested", requested.c_str());
-                cJSON_AddStringToObject(result, "view", active.c_str());
-                cJSON_AddStringToObject(result, "status",
-                                        requested == active ? "applied" : "deferred_until_idle");
+                cJSON_AddStringToObject(result, "current", current.c_str());
+                cJSON_AddStringToObject(result, "status", status);
                 return result;
             });
 
@@ -339,9 +367,85 @@ private:
         press_to_talk_tool_->Initialize();
     }
 
+    static uint64_t NowMs() { return static_cast<uint64_t>(esp_timer_get_time()) / 1000; }
+
+    static dashboard::InactivityState GetInactivityState(Application& app) {
+        const auto state = app.GetDeviceState();
+        if (state == kDeviceStateIdle) {
+            return dashboard::InactivityState::kIdle;
+        }
+        if (state == kDeviceStateListening) {
+            if (!app.GetAudioService().IsPlaybackIdle()) {
+                return dashboard::InactivityState::kBusy;
+            }
+            return app.IsVoiceDetected() ? dashboard::InactivityState::kListeningVoice
+                                         : dashboard::InactivityState::kListeningSilent;
+        }
+        return dashboard::InactivityState::kBusy;
+    }
+
+    void InitializeInactivityTimer() {
+        const esp_timer_create_args_t timer_args = {
+            .callback =
+                [](void* context) {
+                    auto* board = static_cast<LichuangDashboardBoard*>(context);
+                    bool expected = false;
+                    if (!board->inactivity_poll_pending_.compare_exchange_strong(expected, true)) {
+                        return;
+                    }
+                    auto alive = board->inactivity_alive_;
+                    Application::GetInstance().Schedule([board, alive]() {
+                        if (!alive->load()) {
+                            return;
+                        }
+                        board->inactivity_poll_pending_.store(false);
+                        board->PollInactivity();
+                    });
+                },
+            .arg = this,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "dashboard_idle",
+            .skip_unhandled_events = true,
+        };
+        esp_err_t status = esp_timer_create(&timer_args, &inactivity_timer_);
+        if (status == ESP_OK) {
+            status = esp_timer_start_periodic(inactivity_timer_, 500 * 1000);
+        }
+        if (status != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to start dashboard inactivity timer: %s",
+                     esp_err_to_name(status));
+            if (inactivity_timer_ != nullptr) {
+                esp_timer_delete(inactivity_timer_);
+                inactivity_timer_ = nullptr;
+            }
+        }
+    }
+
+    void PollInactivity() {
+        auto& app = Application::GetInstance();
+        const auto activity = GetInactivityState(app);
+        const auto voice_generation = app.GetAudioService().VoiceActivityGeneration();
+        if (voice_generation != last_voice_generation_) {
+            last_voice_generation_ = voice_generation;
+            inactivity_policy_.Restart(activity, NowMs());
+        }
+        const auto action = inactivity_policy_.Observe(activity, NowMs());
+        if (!action.return_to_dashboard) {
+            return;
+        }
+
+        display_->SetPreferredView("dashboard");
+        dashboard_client_->RequestRefresh();
+        if (action.end_conversation) {
+            // The application rechecks VAD when it handles this event. Speech that begins after
+            // this poll therefore invalidates the timeout instead of being interrupted.
+            app.EndConversationIfSilent(voice_generation);
+        }
+    }
+
     void InitializeSerialConfig() {
         if (!uart_is_driver_installed(UART_NUM_0)) {
-            esp_err_t status = uart_driver_install(UART_NUM_0, 1024, 0, 0, nullptr, 0);
+            esp_err_t status = uart_driver_install(UART_NUM_0, 4096, 0, 0, nullptr, 0);
             if (status != ESP_OK) {
                 ESP_LOGW(TAG, "Dashboard serial config unavailable: %s", esp_err_to_name(status));
                 return;
@@ -358,34 +462,19 @@ private:
     }
 
     void SerialConfigTask() {
-        std::array<char, 512> line = {};
-        size_t length = 0;
-        bool overflow = false;
+        dashboard::SerialLineBuffer buffer;
+        std::array<uint8_t, 128> bytes = {};
         while (true) {
-            uint8_t byte = 0;
-            const int read = uart_read_bytes(UART_NUM_0, &byte, 1, pdMS_TO_TICKS(100));
+            const int read =
+                uart_read_bytes(UART_NUM_0, bytes.data(), bytes.size(), pdMS_TO_TICKS(100));
             if (read <= 0) {
                 continue;
             }
-            if (byte == '\r') {
-                continue;
-            }
-            if (byte == '\n') {
-                if (!overflow && length > 0) {
-                    line[length] = '\0';
-                    HandleSerialConfigLine(line.data());
+            for (int i = 0; i < read; ++i) {
+                std::string line;
+                if (buffer.Push(bytes[i], line) && !DashboardUsb::GetInstance().HandleLine(line)) {
+                    HandleSerialConfigLine(line.c_str());
                 }
-                length = 0;
-                overflow = false;
-                continue;
-            }
-            if (byte < 0x20 || byte == 0x7F) {
-                continue;
-            }
-            if (length + 1 < line.size()) {
-                line[length++] = static_cast<char>(byte);
-            } else {
-                overflow = true;
             }
         }
     }
@@ -431,6 +520,12 @@ private:
     DashboardClient* dashboard_client_ = nullptr;
     PressToTalkMcpTool* press_to_talk_tool_ = nullptr;
     TaskHandle_t serial_config_task_ = nullptr;
+    dashboard::InactivityPolicy inactivity_policy_;
+    uint32_t last_voice_generation_ = 0;
+    esp_timer_handle_t inactivity_timer_ = nullptr;
+    std::atomic<bool> inactivity_poll_pending_{false};
+    std::shared_ptr<std::atomic<bool>> inactivity_alive_ =
+        std::make_shared<std::atomic<bool>>(true);
 };
 
 DECLARE_BOARD(LichuangDashboardBoard);

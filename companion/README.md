@@ -1,18 +1,46 @@
 # Xiaozhi Dashboard Companion
 
-本地 companion 使用 Python 标准库提供 SQLite 日程/工作日志存储、HTTP API 和浏览器管理页。无需安装第三方包；建议 Python 3.11 或更高版本，最低支持 Python 3.9。
+本地 companion 提供 SQLite 日程/工作日志存储、HTTP API、USB 串口同步和浏览器管理页。HTTP-only 模式只使用 Python 标准库；默认的 USB 模式还需要 `pyserial`。建议 Python 3.11 或更高版本，最低支持 Python 3.9。
 
 ## 启动
 
-在 `companion` 目录运行：
+日常使用建议在项目根目录运行：
+
+```powershell
+python -m pip install pyserial
+.\scripts\start_companion.ps1 -SerialPort COM4
+```
+
+`COM4` 替换为设备实际串口。`pyserial` 是 USB 模式唯一的额外 Python 依赖。脚本在同一进程中启动 Web 管理页和 USB 串口桥接，Web 服务默认只监听 `127.0.0.1:8765`。脚本还会创建或复用被 Git 忽略的 `config/dashboard.token`；浏览器首次打开管理页时，在“访问令牌”中粘贴该文件内容。设备与电脑不需要位于同一局域网。使用期间应保持 Type-C 线连接、电脑唤醒和进程运行。设备从 companion 自动取得 `Asia/Hong_Kong` 日期和时间，无需单独校时。
+
+旧的 Wi-Fi HTTP 路径保留为手动配置的兼容模式。它要求设备与电脑处于同一可互访的局域网，并可同时指定配置串口和电脑的局域网地址：
+
+```powershell
+.\scripts\start_companion.ps1 `
+  -ListenAddress 0.0.0.0 `
+  -ConfigurePort COM7 `
+  -DashboardUrl http://192.168.1.20:8765
+```
+
+也可以在 `companion` 目录直接启动服务。省略 `--serial-port` 时仅启动 Web/API；传入串口时会在同一进程中启动 USB 桥接：
 
 ```powershell
 python dashboard_service.py
+python dashboard_service.py --serial-port COM4 --serial-baud 115200
 ```
 
-默认监听 `127.0.0.1:8765`，数据写入 `data/dashboard.db`。打开 <http://127.0.0.1:8765/> 可管理记录并查看 320 × 240 设备布局预览。
+直接启动时默认监听 `127.0.0.1:8765`。打开 <http://127.0.0.1:8765/> 可管理记录并查看 320 × 240 设备布局预览。
 
-ESP32 需要从局域网访问电脑时，建议设置随机 token，并监听所有网卡：
+日程和工作日志实际保存在项目内的 `companion/data/dashboard.db`。仓库初始没有这个 SQLite 文件；companion 第一次启动时才会创建它。若设置 `DASHBOARD_DB` 或传入 `--db`，则改为使用指定位置，例如：
+
+```powershell
+$env:DASHBOARD_DB = "D:\dashboard-data\dashboard.db"
+python dashboard_service.py
+
+python dashboard_service.py --db D:\dashboard-data\dashboard.db
+```
+
+使用 Wi-Fi HTTP 兼容模式时，建议设置随机 token，并监听所有网卡：
 
 ```powershell
 $env:DASHBOARD_TOKEN = "请替换为足够长的随机值"
@@ -20,6 +48,8 @@ python dashboard_service.py --host 0.0.0.0
 ```
 
 然后将 ESP32 的服务地址配置为电脑的局域网 IP，例如 `http://192.168.1.20:8765`，请求携带 `Authorization: Bearer <token>`。Windows 防火墙可能会在首次启动时询问是否允许专用网络访问。
+
+只有 Wi-Fi HTTP 兼容模式要求设备与电脑处于同一可互访的局域网。该模式必须显式配置，不是 USB 断开后的自动故障切换；结果不确定的写入不会跨 USB/HTTP 重试。默认 USB 方式使用一根支持数据传输的 Type-C 线完成供电、烧录、串口配置和日程/日志同步；只有充电功能的线不行。关闭 PowerShell 窗口、停止进程、拔掉线或让电脑睡眠都会使设备暂时无法同步。
 
 支持的配置：
 
@@ -29,12 +59,14 @@ python dashboard_service.py --host 0.0.0.0
 | `--port` | `DASHBOARD_PORT` | `8765` |
 | `--db` | `DASHBOARD_DB` | `companion/data/dashboard.db` |
 | `--token` | `DASHBOARD_TOKEN` | 未设置（不鉴权） |
+| `--serial-port` | — | 未设置（不启用 USB） |
+| `--serial-baud` | — | `115200` |
 
 token 不应写入仓库。优先使用环境变量；命令行参数可能出现在 shell 历史或进程信息里。绑定 `0.0.0.0` 时应启用 token。
 
 ## API 契约
 
-日期使用 `YYYY-MM-DD`，时间使用 24 小时制 `HH:MM`。未传日期的 Dashboard 请求按 `Asia/Hong_Kong` 的当前日期处理。所有 JSON 响应使用 UTF-8。配置 token 后，全部 `/api/*` 请求都必须携带 Bearer token。
+日期使用 `YYYY-MM-DD`，时间使用 24 小时制 `HH:MM`。未传日期的 Dashboard 请求和 USB 同步都按 `Asia/Hong_Kong` 的当前日期处理；USB 响应还会为设备提供同一时区的当前时间。USB 与 HTTP 共用同一套校验和 SQLite 记录。所有 JSON 响应使用 UTF-8。配置 token 后，全部 `/api/*` 请求都必须携带 Bearer token。
 
 ### 读取一天的数据
 
@@ -129,4 +161,4 @@ JSON 请求体最大 64 KiB，读取超时为 10 秒；标题最大 200 字符�
 python -m unittest discover -s tests -v
 ```
 
-覆盖 CRUD、参数校验、Bearer 鉴权、重启持久化、香港时区默认日期、请求体上限和 `request_id` 幂等。
+覆盖 HTTP CRUD、参数校验、Bearer 鉴权、重启持久化、USB 帧边界与 allowlist、USB/HTTP 共用 SQLite、香港时区日期和设备校时、请求体上限以及 `request_id` 幂等。

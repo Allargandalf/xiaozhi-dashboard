@@ -88,6 +88,9 @@ void AudioService::Initialize(AudioCodec* codec) {
         PushTaskToEncodeQueue(kAudioTaskTypeEncodeToSendQueue, std::move(data));
     });
     audio_engine_->OnVadStateChange([this](bool speaking) {
+        if (speaking) {
+            voice_activity_generation_.fetch_add(1);
+        }
         voice_detected_ = speaking;
         if (callbacks_.on_vad_change) {
             callbacks_.on_vad_change(speaking);
@@ -727,6 +730,7 @@ void AudioService::EnableVoiceProcessing(bool enable) {
         if (audio_engine_initialized_) {
             audio_engine_->EnableVoiceProcessing(false);
         }
+        voice_detected_.store(false);
         xEventGroupClearBits(event_group_, AS_EVENT_AUDIO_PROCESSOR_RUNNING);
     }
 }

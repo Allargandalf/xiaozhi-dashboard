@@ -122,7 +122,8 @@ public:
     void EncodeWakeWord();
     std::unique_ptr<AudioStreamPacket> PopWakeWordPacket();
     const std::string& GetLastWakeWord() const;
-    bool IsVoiceDetected() const { return voice_detected_; }
+    bool IsVoiceDetected() const { return voice_detected_.load(); }
+    uint32_t VoiceActivityGeneration() const { return voice_activity_generation_.load(); }
     bool IsIdle();
     bool IsPlaybackIdle();
     bool IsWakeWordRunning() const {
@@ -198,7 +199,8 @@ private:
     FixedQueue<uint32_t, MAX_TIMESTAMPS_IN_QUEUE> timestamp_queue_;
 
     bool audio_engine_initialized_ = false;
-    bool voice_detected_ = false;
+    std::atomic<bool> voice_detected_{false};
+    std::atomic<uint32_t> voice_activity_generation_{0};
 #if CONFIG_USE_DEVICE_AEC
     bool device_aec_enabled_ = true;
 #else

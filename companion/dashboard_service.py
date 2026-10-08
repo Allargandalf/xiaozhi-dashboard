@@ -589,6 +589,25 @@ def make_server(
     return DashboardServer((host, port), DashboardApp(EntryStore(database), normalized_token, today_provider))
 
 
+def handle_device_request(app: DashboardApp, method: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    """USB uses the same validation and durable SQLite store as HTTP."""
+    try:
+        validate_unicode(payload)
+        if method == "dashboard.get":
+            if payload:
+                raise ApiError(400, "invalid_request", "dashboard.get takes no fields")
+            return 200, app.store.dashboard(app.today_provider().isoformat(), 4, 32)
+        if method == "entries.add":
+            values = normalize_create(payload)
+            if not values["request_id"]:
+                raise ApiError(400, "missing_request_id", "USB writes require a request_id")
+            entry, replay = app.store.create(values)
+            return (200 if replay else 201), {"entry": entry, "idempotent": replay}
+        raise ApiError(400, "unknown_method", "Unsupported device request")
+    except ApiError as error:
+        return error.status, {"error": error.code}
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     companion_root = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description="Xiaozhi local schedule and work-log service")
@@ -610,15 +629,29 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=os.environ.get("DASHBOARD_TOKEN"),
         help="Bearer token; DASHBOARD_TOKEN is safer than command history",
     )
+    parser.add_argument("--serial-port", help="USB-to-UART port for direct sync, e.g. COM4")
+    parser.add_argument("--serial-baud", type=int, default=115200, help="USB UART baud rate")
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         parser.error("--port must be between 0 and 65535")
+    if args.serial_baud <= 0:
+        parser.error("--serial-baud must be positive")
     return args
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     server = make_server(args.host, args.port, args.db, args.token)
+    bridge = None
+    if args.serial_port:
+        from serial_bridge import SerialBridge
+        try:
+            bridge = SerialBridge(args.serial_port, lambda method, body: handle_device_request(server.app, method, body), baud=args.serial_baud)
+        except RuntimeError as error:
+            server.server_close()
+            print(str(error), file=sys.stderr)
+            return 1
+        bridge.start()
     host, port = server.server_address[:2]
     print(f"Xiaozhi Dashboard companion listening on http://{host}:{port}")
     print(f"Database: {Path(args.db).expanduser().resolve()}")
@@ -633,6 +666,8 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\nStopping companion service")
     finally:
+        if bridge is not None:
+            bridge.stop()
         server.server_close()
     return 0
 

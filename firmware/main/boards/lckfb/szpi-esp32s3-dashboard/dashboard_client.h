@@ -58,7 +58,7 @@ private:
                        std::string& error) const;
     bool ValidatePostResponse(const std::string& body, const Job& job, std::string& error) const;
     void ReportSyncError(const std::string& detail);
-    void ReportSnapshot(dashboard::Snapshot snapshot);
+    void ReportSnapshot(dashboard::Snapshot snapshot, bool via_usb = false);
     void LoadConfig();
     void CopyConfig(std::string& url, std::string& token) const;
 

@@ -4,6 +4,7 @@
 #include "board.h"
 #include "dashboard_display.h"
 #include "dashboard_protocol.h"
+#include "dashboard_usb.h"
 #include "http.h"
 #include "settings.h"
 
@@ -116,7 +117,13 @@ bool DashboardClient::Initialize() {
         ESP_LOGE(TAG, "Failed to create dashboard work queue");
         return false;
     }
-    if (xTaskCreate(WorkerTaskEntry, "dashboard_http", kWorkerStackSize, this, kWorkerPriority,
+    if (!DashboardUsb::GetInstance().Initialize([this]() { RequestRefresh(); })) {
+        ESP_LOGE(TAG, "Failed to initialize dashboard USB transport");
+        vQueueDelete(queue_);
+        queue_ = nullptr;
+        return false;
+    }
+    if (xTaskCreate(WorkerTaskEntry, "dashboard_sync", kWorkerStackSize, this, kWorkerPriority,
                     &worker_task_) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create dashboard worker");
         vQueueDelete(queue_);
@@ -151,6 +158,14 @@ DashboardClient::QueueResult DashboardClient::QueueEntry(const std::string& type
     }
     if (queue_ == nullptr) {
         result.error = "dashboard worker is unavailable";
+        return result;
+    }
+    std::string configured_url;
+    std::string configured_token;
+    CopyConfig(configured_url, configured_token);
+    if (!DashboardUsb::GetInstance().IsConnected() &&
+        configured_url == "http://xiaozhi-dashboard.local:8765") {
+        result.error = "computer service is not connected; start the companion USB bridge";
         return result;
     }
 
@@ -266,6 +281,7 @@ std::string DashboardClient::GetConfigSummary() const {
     cJSON_AddBoolToObject(json.get(), "ok", true);
     cJSON_AddStringToObject(json.get(), "url", url.c_str());
     cJSON_AddBoolToObject(json.get(), "token_set", !token.empty());
+    cJSON_AddBoolToObject(json.get(), "usb_connected", DashboardUsb::GetInstance().IsConnected());
     CJsonStringPtr output(cJSON_PrintUnformatted(json.get()), cJSON_free);
     return output != nullptr ? output.get() : R"({"ok":false,"error":"save_failed"})";
 }
@@ -279,7 +295,9 @@ void DashboardClient::WorkerTask() {
     FetchDashboard();
     while (true) {
         Job job;
-        if (xQueueReceive(queue_, &job, kRefreshInterval) == pdTRUE) {
+        const TickType_t interval =
+            DashboardUsb::GetInstance().IsConnected() ? pdMS_TO_TICKS(5000) : kRefreshInterval;
+        if (xQueueReceive(queue_, &job, interval) == pdTRUE) {
             if (job.type == JobType::kAddEntry) {
                 if (PostEntry(job)) {
                     FetchDashboard();
@@ -309,6 +327,37 @@ bool DashboardClient::PostEntry(const Job& job) {
     CJsonStringPtr body(cJSON_PrintUnformatted(json.get()), cJSON_free);
     if (body == nullptr) {
         ReportSyncError("写入编码失败");
+        return false;
+    }
+
+    // Keep one transport for both attempts. A lost USB confirmation must not
+    // silently write to a different computer/database through HTTP fallback.
+    if (DashboardUsb::GetInstance().IsConnected()) {
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            std::string response;
+            std::string error;
+            int status = 0;
+            if (!DashboardUsb::GetInstance().Request("entries.add", body.get(), response, status)) {
+                continue;
+            }
+            if (status >= 400 && status < 500) {
+                last_write_problem_ = "上次写入被拒绝";
+                ReportSyncError("");
+                return false;
+            }
+            if (status >= 200 && status < 300 && ValidatePostResponse(response, job, error)) {
+                last_write_problem_.clear();
+                ReportSyncError("USB 写入已保存");
+                return true;
+            }
+        }
+        last_write_problem_ = "上次写入结果未知";
+        ReportSyncError("");
+        return false;
+    }
+    if (service_url == "http://xiaozhi-dashboard.local:8765") {
+        last_write_problem_ = "上次写入未保存";
+        ReportSyncError("连接电脑以同步");
         return false;
     }
 
@@ -366,6 +415,26 @@ bool DashboardClient::FetchDashboard() {
     std::string service_url;
     std::string token;
     CopyConfig(service_url, token);
+    if (DashboardUsb::GetInstance().IsConnected()) {
+        std::string body;
+        std::string error;
+        int status = 0;
+        if (!DashboardUsb::GetInstance().Request("dashboard.get", "{}", body, status)) {
+            ReportSyncError("连接电脑以同步");
+            return false;
+        }
+        dashboard::Snapshot snapshot;
+        if (status != 200 || !ParseSnapshot(body, snapshot, error)) {
+            ReportSyncError("USB 数据同步失败");
+            return false;
+        }
+        ReportSnapshot(std::move(snapshot), true);
+        return true;
+    }
+    if (service_url == "http://xiaozhi-dashboard.local:8765") {
+        ReportSyncError("连接电脑以同步");
+        return false;
+    }
     const std::string url = JoinUrl(service_url, "/api/dashboard?limit=4&content_limit=32");
     auto http = Board::GetInstance().GetNetwork()->CreateHttp(0);
     if (http == nullptr) {
@@ -485,8 +554,8 @@ void DashboardClient::ReportSyncError(const std::string& detail) {
         [display = display_, status = std::move(status)]() { display->SetSyncStatus(status); });
 }
 
-void DashboardClient::ReportSnapshot(dashboard::Snapshot snapshot) {
-    std::string status = CurrentSyncLabel();
+void DashboardClient::ReportSnapshot(dashboard::Snapshot snapshot, bool via_usb) {
+    std::string status = via_usb ? "USB 已连接" : CurrentSyncLabel();
     if (!last_write_problem_.empty()) {
         status += " · " + last_write_problem_;
     }
