@@ -66,6 +66,8 @@ HTTP API 主要供浏览器管理页和手动配置的 Wi-Fi 兼容模式使用�
 
 一根支持数据传输的 Type-C 线即可完成供电、烧录、串口配置和日程/日志同步；只有充电功能的线不行。电脑端 companion 仍需持续运行。
 
+这块双 Type-C 板卡使用 **USB 转 UART（CH340）接口**同步，本机对应 `COM4`；另一接口是原生 USB，当前没有实现该接口的数据同步。其他电脑的 COM 编号可能不同。
+
 设备在唤醒和对话时显示 Assistant。调用 `self.dashboard.set_view` 并传入 `view=dashboard` 会立即结束当前对话并回到 Dashboard；普通对话结束后，默认在 30 秒无活动时自动回到 Dashboard。
 
 自行构建、运行测试和生成发布包见 [BUILD.md](BUILD.md)。

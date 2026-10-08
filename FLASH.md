@@ -28,6 +28,8 @@ Get-FileHash release/merged-firmware.bin -Algorithm SHA256
 
 使用支持数据传输的 Type-C 线连接板子（只有充电功能的线无法烧录或配置），激活 ESP-IDF 6.0.1+ 环境并确认串口，例如 `COM7`：
 
+本板有两个 Type-C 接口，烧录和同步应使用 USB 转 UART（CH340）接口。本机为 `COM4`；另一原生 USB 接口当前未实现日程/日志同步。
+
 ```powershell
 python -m esptool --chip esp32s3 --port COM7 --baud 460800 `
   write-flash 0x0 release/merged-firmware.bin

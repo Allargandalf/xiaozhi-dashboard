@@ -6,6 +6,8 @@
 
 日常使用建议在项目根目录运行：
 
+双 Type-C 板卡应接 USB 转 UART（CH340）接口，当前固件未通过另一原生 USB 接口同步数据。下例 `COM4` 是本机的 CH340 串口编号，其他电脑可能不同。
+
 ```powershell
 python -m pip install pyserial
 .\scripts\start_companion.ps1 -SerialPort COM4
