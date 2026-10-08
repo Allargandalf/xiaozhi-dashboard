@@ -30,6 +30,10 @@ python -m pip install pyserial
 This USB path does not require the board and computer to share a LAN. Wi-Fi remains in
 use for Xiaozhi conversations. The release image also retains HTTP over Wi-Fi as a
 legacy, explicitly configured compatibility mode; it is not automatic USB failover.
+The normal local management page is `http://127.0.0.1:8765/` and does not require a
+credential. Use port 8765 only; port 8771 was used by a temporary test fixture and is
+not the live companion data source. The web UI, USB bridge, and optional HTTP endpoint
+run in one companion process and share `companion/data/dashboard.db`.
 It contains no secret; the fallback URL is
 `http://xiaozhi-dashboard.local:8765` and its fallback token is empty. Runtime fallback
 values are stored in NVS under namespace `dashboard`, keys `url` and `token`.
@@ -67,6 +71,14 @@ whether a token is set; it never prints the token.
   responses to 16 KiB. The device refreshes about every five seconds while USB is
   connected and every 30 seconds when using the HTTP compatibility mode. An uncertain
   write is never retried through the other transport.
+- The browser refreshes its selected date about every five seconds without clearing an
+  in-progress form. It can show up to 100 entries of each type with full content. The
+  board uses today's date in `Asia/Hong_Kong`, displays at most four entries per section,
+  and fetches the first 32 characters of each entry's content, with overflowing screen
+  text ellipsized. The two screens can therefore show
+  different valid subsets of the same database.
+- Schedules and work logs remain independent records. A schedule does not automatically
+  become completed or turn into a work log.
 
 The previous USB/idle-return version was built, flashed, and checked on the physical
 board. Validation of the current page/button changes is recorded in the root BUILD.md.

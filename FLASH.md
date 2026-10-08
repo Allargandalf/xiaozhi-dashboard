@@ -63,13 +63,14 @@ python -m pip install pyserial
 .\scripts\start_companion.ps1 -SerialPort COM4
 ```
 
-脚本在同一进程中启动本地 Web 管理页与 USB 串口桥接。使用期间保持 Type-C 连接、电脑唤醒和这个 PowerShell 窗口运行。浏览器管理页为 `http://127.0.0.1:8765/`；首次打开时，在“访问令牌”中粘贴 `config/dashboard.token` 的内容。记录写入 `companion/data/dashboard.db`；该文件在 companion 首次启动时创建。
+脚本在同一进程中启动本地 Web 管理页与 USB 串口桥接。使用期间保持 Type-C 连接、电脑唤醒和这个 PowerShell 窗口运行。浏览器管理页为 <http://127.0.0.1:8765/>，默认不需要访问凭据。只使用 `8765`；不要打开旧测试页的 `8771` 端口。Web、USB 和可选 HTTP 接口共同读写 `companion/data/dashboard.db`，该文件在 companion 首次启动时创建；脚本显式传入它的绝对路径，不会受遗留 `DASHBOARD_DB` 环境变量影响。
 
-如需手动改用 Wi-Fi HTTP 兼容模式，先确认电脑的局域网 IP，再让脚本创建/复用本地 token、配置设备并启动服务：
+如需手动改用 Wi-Fi HTTP 兼容模式，先确认电脑的局域网 IP，再让脚本创建/复用 token、配置设备并启动服务。也可以用 `-TokenFile` 指定 token 文件：
 
 ```powershell
 .\scripts\start_companion.ps1 `
   -ListenAddress 0.0.0.0 `
+  -TokenFile .\config\dashboard.token `
   -ConfigurePort COM4 `
   -DashboardUrl http://192.168.1.23:8765
 ```
@@ -78,11 +79,13 @@ python -m pip install pyserial
 
 USB 与 Wi-Fi HTTP 两种方式使用同一个 SQLite 数据库和浏览器管理页。
 
+浏览器约每 5 秒自动刷新所选日期，并保留正在填写或编辑的表单。网页每类最多读取 100 条并显示完整内容；ESP32 按 `Asia/Hong_Kong` 的今天显示每类最多 4 条，每条补充内容读取前 32 个字符，超出屏幕宽度的文字以省略号显示。因此检查同步时应先让网页选择今天；条目较多或文字较长时，两边显示不同子集或长度属于正常现象。日程与工作记录仍是独立数据，日程不会自动完成或转成工作记录。
+
 ## 5. 真机检查单
 
 - 屏幕方向、字体和 Dashboard 刷新正常。
 - 热点配网、重启和断网重连正常。
-- 浏览器能打开电脑 Dashboard；ESP32 能通过 Type-C 读取和新增当日日程/日志。
+- 浏览器能无凭据打开 `http://127.0.0.1:8765/`；ESP32 能通过 Type-C 读取和新增当日日程/日志，二者落在同一个 `companion/data/dashboard.db`。
 - xiaozhi.me 能发现并调用 `self.dashboard.set_view` 与 `self.dashboard.add_entry`。
 - `self.dashboard.set_view` 传入 `view=dashboard` 时立即结束当前对话并显示 Dashboard。
 - 未显式切换时，普通对话结束后默认在 30 秒无活动时自动显示 Dashboard。

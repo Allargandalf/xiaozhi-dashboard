@@ -14,7 +14,8 @@ COMPANION_ROOT = Path(__file__).resolve().parents[1]
 if str(COMPANION_ROOT) not in sys.path:
     sys.path.insert(0, str(COMPANION_ROOT))
 
-from dashboard_service import local_today, make_server
+from dashboard_service import handle_device_request, local_today, make_server
+from serial_bridge import REQUEST_PREFIX, RESPONSE_PREFIX, process_request
 
 
 class RunningService:
@@ -121,6 +122,40 @@ class CompanionHttpTests(unittest.TestCase):
             status, dashboard = service.request("GET", "/api/dashboard")
             self.assertEqual(status, 200)
             self.assertEqual(dashboard["date"], "2030-01-02")
+
+    def test_unauthenticated_http_and_usb_share_the_same_live_records(self) -> None:
+        with RunningService(self.database) as service:
+            def usb(method, body):
+                wire = REQUEST_PREFIX + json.dumps({
+                    "v": 1, "id": "0123456789abcdef", "method": method, "body": body,
+                }).encode()
+                response = process_request(
+                    wire, lambda method, payload: handle_device_request(service.server.app, method, payload),
+                )
+                return json.loads(response[len(RESPONSE_PREFIX):])
+
+            status, created = service.request("POST", "/api/entries", {
+                "type": "schedule", "date": "2026-10-02", "time": "15:00", "title": "Web schedule",
+            })
+            self.assertEqual(status, 201)
+            entry_id = created["entry"]["id"]
+            snapshot = usb("dashboard.get", {})
+            self.assertEqual(snapshot["status"], 200)
+            self.assertEqual(snapshot["body"]["schedules"], [created["entry"]])
+
+            added = usb("entries.add", {
+                "type": "log", "date": "2026-10-02", "title": "Voice log", "request_id": "usb-web-test",
+            })
+            self.assertEqual(added["status"], 201)
+            status, dashboard = service.request("GET", "/api/dashboard")
+            self.assertEqual(status, 200)
+            self.assertEqual(dashboard["work_logs"], [added["body"]["entry"]])
+
+            status, updated = service.request("PATCH", f"/api/entries/{entry_id}", {"title": "Updated on web"})
+            self.assertEqual(status, 200)
+            self.assertEqual(usb("dashboard.get", {})["body"]["schedules"], [updated["entry"]])
+            self.assertEqual(service.request("DELETE", f"/api/entries/{entry_id}")[0], 204)
+            self.assertEqual(usb("dashboard.get", {})["body"]["schedules"], [])
 
     def test_authentication(self) -> None:
         with RunningService(self.database, token="secret-token") as service:

@@ -40,8 +40,6 @@
     .connection-card.ready .connection-dot { background:var(--green); box-shadow:0 0 0 4px var(--green-soft); }
     .connection-card.error .connection-dot { background:var(--danger); box-shadow:0 0 0 4px var(--danger-soft); }
     .connection-card p { margin:7px 0 0 16px; color:var(--secondary); font-size:11px; line-height:1.55; }
-    .plain-button { padding:6px 8px; border-radius:9px; color:var(--secondary); background:transparent; font-size:12px; text-align:left; }
-    .plain-button:hover { color:var(--text); background:#f1eee7; }
     .main { min-width:0; padding:26px clamp(22px,3vw,46px) 48px; }
     .topbar { min-height:48px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
     .date-nav { display:flex; align-items:center; gap:8px; }
@@ -183,8 +181,6 @@
     .dialog-actions button { min-height:40px; padding:0 15px; border-radius:11px; font-weight:700; }
     .danger-button { color:white; background:var(--danger); }
     .danger-button:hover { background:#8f3c34; }
-    .remember { margin-top:10px; display:flex; align-items:center; gap:8px; color:var(--secondary); font-size:11px; }
-    .remember input { width:15px; height:15px; accent-color:var(--green); }
     @media (max-width:1060px) { .app{grid-template-columns:190px minmax(0,1fr)} .sidebar{padding-left:14px;padding-right:14px} .workspace{grid-template-columns:minmax(0,1fr) 310px} }
     @media (max-width:860px) {
       .app{display:block} .sidebar{min-height:0;padding:14px 18px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:18px;border-right:0;border-bottom:1px solid var(--border)}
@@ -207,12 +203,11 @@
       </nav>
       <div class="sidebar-bottom">
         <div class="connection-card" id="connectionCard"><div class="connection-line"><span class="connection-dot"></span><span id="connectionTitle">正在读取</span></div><p id="connectionDetail">请稍候，正在准备当天内容</p></div>
-        <button class="plain-button" id="tokenButton">访问设置</button>
       </div>
     </aside>
     <main class="main">
       <div class="topbar">
-        <div class="date-nav" aria-label="选择日期"><button class="icon-button" id="prev" type="button" title="前一天" aria-label="前一天">‹</button><div class="date-input-wrap"><input id="date" type="date" aria-label="日期"></div><button class="icon-button" id="next" type="button" title="后一天" aria-label="后一天">›</button><button class="today-button" id="today" type="button">回到今天</button></div>
+        <div class="date-nav" aria-label="选择日期"><button class="icon-button" id="prev" type="button" title="前一天" aria-label="前一天">‹</button><div class="date-input-wrap"><input id="date" type="date" aria-label="日期"></div><button class="icon-button" id="next" type="button" title="后一天" aria-label="后一天">›</button><button class="today-button" id="today" type="button">回到今天</button><button class="today-button" id="refreshButton" type="button" title="读取语音、USB 和网页端的最新内容">刷新</button></div>
         <button class="primary-button" id="newEntry" type="button"><span class="plus">＋</span>新增记录</button>
       </div>
       <section class="hero"><div><div class="eyebrow" id="dateEyebrow">今天</div><h1 id="dateHeading">今天过得怎么样？</h1><p id="dateSubheading">安排要做的事，也记下已经完成的工作。</p></div><div class="save-note" id="saveNote" title="数据保存在这台电脑上"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m3 8.2 3 3L13 4.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>内容保存在这台电脑上</span></div></section>
@@ -246,13 +241,12 @@
       </div>
     </main>
   </div>
-  <dialog id="tokenDialog"><form method="dialog" id="tokenForm" class="dialog-content"><h2>访问设置</h2><p>如果页面提示需要访问凭证，请填写启动工具提供的凭证。默认只在本次打开页面期间使用。</p><label class="field">访问凭证<input id="token" type="password" autocomplete="off" placeholder="请输入访问凭证"></label><label class="remember"><input id="rememberToken" type="checkbox">下次在这个浏览器中继续使用</label><div class="dialog-actions"><button class="secondary-button" value="cancel">取消</button><button class="primary-button" value="save">保存并读取</button></div></form></dialog>
   <dialog id="deleteDialog"><form method="dialog" id="deleteForm" class="dialog-content"><h2>删除这条记录？</h2><p>“<span id="deleteTitle"></span>”删除后将不再出现在当天内容中。</p><div class="dialog-actions"><button class="secondary-button" value="cancel">保留</button><button class="danger-button" id="confirmDelete" value="delete">删除</button></div></form></dialog>
   <script>
     const $ = id => document.getElementById(id);
-    let token = localStorage.getItem('dashboardToken') || '';
     let model = { date:'', schedules:[], work_logs:[], counts:{schedules:0,work_logs:0}, truncated:{} };
-    let dataState='loading', currentPreview='overview', loadSequence=0, deleteTarget=null, pendingCreate=null;
+    let dataState='loading', currentPreview='overview', deleteTarget=null, pendingCreate=null;
+    let activeLoad=null, pendingLoad=null, mutationInFlight=false, formDirty=false;
     const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
     const two = value => String(value).padStart(2,'0');
     const localIsoDate = () => { const d=new Date(); return `${d.getFullYear()}-${two(d.getMonth()+1)}-${two(d.getDate())}`; };
@@ -260,7 +254,7 @@
     const selectedType = () => document.querySelector('input[name="entryType"]:checked').value;
     const allEntries = () => [...model.schedules,...model.work_logs];
     function friendlyError(error) {
-      if(error.status===401)return '需要填写访问凭证后才能读取内容。';
+      if(error.status===401)return '本地服务仍在使用旧的访问设置。请关闭并重新启动小智工具，然后刷新页面。';
       if(error.status===404)return '这条记录已经不存在，请重新读取。';
       if(error.status===409)return '这次保存与先前内容不一致，请稍后再试。';
       if(error.status>=500)return '暂时无法完成操作，请稍后再试。';
@@ -269,11 +263,11 @@
     }
     async function api(path,options={}) {
       let response;
-      try { response=await fetch(path,{...options,credentials:'same-origin',headers:{...(options.body?{'Content-Type':'application/json'}:{}),...(token?{Authorization:`Bearer ${token}`} :{}),...(options.headers||{})}}); }
+      try { response=await fetch(path,{...options,headers:{...(options.body?{'Content-Type':'application/json'}:{}),...(options.headers||{})}}); }
       catch(cause){ const error=new Error('network');error.cause=cause;throw error; }
       if(response.status===204)return null;
       let payload={}; try{payload=await response.json();}catch{}
-      if(!response.ok){ const error=new Error(payload.error?.message||`HTTP ${response.status}`);error.status=response.status;error.code=payload.error?.code;if(response.status===401&&!$('tokenDialog').open){$('token').value=token;$('rememberToken').checked=Boolean(localStorage.getItem('dashboardToken'));$('tokenDialog').showModal();}throw error; }
+      if(!response.ok){ const error=new Error(payload.error?.message||`HTTP ${response.status}`);error.status=response.status;error.code=payload.error?.code;throw error; }
       return payload;
     }
     function formatDate(iso,options){const d=new Date(`${iso}T12:00:00`);return !iso||Number.isNaN(d.getTime())?'':new Intl.DateTimeFormat('zh-CN',options).format(d);}
@@ -307,41 +301,79 @@
       $('deviceBody').innerHTML=`<div class="device-list${currentPreview==='log'?' warm':''}">${entries.slice(0,4).map(e=>`<div class="device-line"><span class="device-prefix">${escapeHtml(currentPreview==='schedule'?(e.time||'全天'):datePrefix(e))}</span><span class="device-line-title">${escapeHtml(e.title)}</span></div>`).join('')}</div>`;
     }
     function render(){const s=model.counts?.schedules??model.schedules.length,l=model.counts?.work_logs??model.work_logs.length;renderList('schedules',model.schedules,'schedule');renderList('logs',model.work_logs,'log');$('scheduleStat').textContent=s;$('logStat').textContent=l;$('totalStat').textContent=s+l;$('scheduleCount').textContent=`${s} 项`;$('logCount').textContent=`${l} 项`;$('navScheduleCount').textContent=s;$('navLogCount').textContent=l;updateDateHeading();renderPreview();}
-    async function load(options={}){
-      const sequence=++loadSequence;dataState='loading';model={...model,date:$('date').value,schedules:[],work_logs:[],counts:{schedules:0,work_logs:0}};setConnection('loading');setNotice('loading','正在读取当天内容…');render();const query=options.serverDate?'':`date=${encodeURIComponent($('date').value)}&`;
-      try{const incoming=await api(`/api/dashboard?${query}limit=100&content_limit=10000`);if(sequence!==loadSequence)return;model=incoming;dataState='ready';if(options.serverDate){$('date').value=model.date;resetForm();}setConnection('ready');setNotice(options.successMessage?'success':'',options.successMessage||'');render();if(options.successMessage)window.setTimeout(()=>{if(dataState==='ready')setNotice();},2600);}
-      catch(error){if(sequence!==loadSequence)return;dataState='error';setConnection('error');setNotice('error',friendlyError(error));render();}
+    function requestIsCurrent(request){return $('date').value===request.selectedDate;}
+    async function performLoad(request){
+      const keepVisible=request.background&&dataState==='ready';
+      if(!keepVisible){dataState='loading';setConnection('loading');setNotice('loading',request.successMessage?'正在刷新当天内容…':'正在读取当天内容…');render();}
+      const query=request.serverDate?'':`date=${encodeURIComponent(request.selectedDate)}&`;
+      try{
+        const incoming=await api(`/api/dashboard?${query}limit=100&content_limit=10000`);
+        if(request.serverDate){
+          if(!requestIsCurrent(request)||formDirty||$('entryForm').contains(document.activeElement)){
+            pendingLoad={selectedDate:$('date').value};
+            return false;
+          }
+          $('date').value=incoming.date;
+          resetForm();
+        }else if(!requestIsCurrent(request))return false;
+        model=incoming;dataState='ready';setConnection('ready');setNotice(request.successMessage?'success':'',request.successMessage||'');render();
+        if(request.successMessage)window.setTimeout(()=>{if(dataState==='ready')setNotice();},2600);
+        return true;
+      }catch(error){
+        if(!request.serverDate&&!requestIsCurrent(request))return false;
+        if(!keepVisible){dataState='error';render();}
+        setConnection('error');setNotice('error',friendlyError(error));return false;
+      }
     }
-    function resetForm(preferredType){$('entryForm').reset();$('entryId').value='';$('entryDate').value=$('date').value||model.date||localIsoDate();$(preferredType==='log'?'typeLog':'typeSchedule').checked=true;$('formHeading').textContent='新增记录';$('formHint').textContent='安排接下来要做的事，或记下工作进展。';$('save').textContent='保存记录';$('cancel').hidden=true;pendingCreate=null;setFormStatus();}
+    function startLoad(request){
+      activeLoad=performLoad(request).finally(()=>{
+        activeLoad=null;
+        if(pendingLoad&&!mutationInFlight){const next=pendingLoad;pendingLoad=null;startLoad(next);}
+      });
+      return activeLoad;
+    }
+    function load(options={}){
+      const request={...options,selectedDate:$('date').value};
+      if(activeLoad||mutationInFlight){if(!options.background)pendingLoad=request;return activeLoad||Promise.resolve(false);}
+      return startLoad(request);
+    }
+    async function waitForActiveLoad(){if(activeLoad){try{await activeLoad;}catch{}}}
+    function finishMutation(refreshPending=true){
+      mutationInFlight=false;
+      const next=pendingLoad;pendingLoad=null;
+      if(refreshPending&&next)startLoad(next);
+    }
+    function resetForm(preferredType){$('entryForm').reset();$('entryId').value='';$('entryDate').value=$('date').value||model.date||localIsoDate();$(preferredType==='log'?'typeLog':'typeSchedule').checked=true;$('formHeading').textContent='新增记录';$('formHint').textContent='安排接下来要做的事，或记下工作进展。';$('save').textContent='保存记录';$('cancel').hidden=true;pendingCreate=null;formDirty=false;setFormStatus();}
     function openEditor(type='schedule'){if(!$('entryId').value)$(type==='log'?'typeLog':'typeSchedule').checked=true;$('editor').scrollIntoView({behavior:'smooth',block:'start'});window.setTimeout(()=>$('title').focus(),250);}
     function changeDay(offset){const d=new Date(`${$('date').value}T12:00:00`);if(Number.isNaN(d.getTime()))return;d.setDate(d.getDate()+offset);$('date').value=`${d.getFullYear()}-${two(d.getMonth()+1)}-${two(d.getDate())}`;resetForm();load();}
     function updateMockClock(){const now=new Date();$('mockClock').textContent=`${two(now.getHours())}:${two(now.getMinutes())}`;}
     function switchView(view){document.body.dataset.view=view;document.querySelectorAll('.nav-button').forEach(b=>{const active=b.dataset.view===view;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});}
     $('entryForm').addEventListener('submit',async event=>{
-      event.preventDefault();const id=$('entryId').value;const payload={type:selectedType(),date:$('entryDate').value,time:$('time').value||null,title:$('title').value,content:$('content').value};
+      event.preventDefault();if(mutationInFlight)return;const id=$('entryId').value;const payload={type:selectedType(),date:$('entryDate').value,time:$('time').value||null,title:$('title').value,content:$('content').value};
       if(!id){const fingerprint=JSON.stringify(payload);if(!pendingCreate||pendingCreate.fingerprint!==fingerprint)pendingCreate={fingerprint,requestId:createRequestId()};payload.request_id=pendingCreate.requestId;}
-      $('save').disabled=true;$('cancel').disabled=true;setFormStatus(id?'正在更新…':'正在保存…');
-      try{await api(id?`/api/entries/${id}`:'/api/entries',{method:id?'PATCH':'POST',body:JSON.stringify(payload)});pendingCreate=null;resetForm();await load({successMessage:id?'记录已更新，并保存在这台电脑上。':'记录已添加，并保存在这台电脑上。'});}
-      catch(error){setFormStatus(friendlyError(error),true);}finally{$('save').disabled=false;$('cancel').disabled=false;}
+      mutationInFlight=true;$('save').disabled=true;$('cancel').disabled=true;setFormStatus(id?'正在更新…':'正在保存…');
+      try{await waitForActiveLoad();await api(id?`/api/entries/${id}`:'/api/entries',{method:id?'PATCH':'POST',body:JSON.stringify(payload)});pendingCreate=null;resetForm();finishMutation(false);await load({successMessage:id?'记录已更新，并保存在这台电脑上。':'记录已添加，并保存在这台电脑上。'});}
+      catch(error){setFormStatus(friendlyError(error),true);}finally{if(mutationInFlight)finishMutation();$('save').disabled=false;$('cancel').disabled=false;}
     });
+    $('entryForm').addEventListener('input',()=>{formDirty=true;});
+    $('entryForm').addEventListener('change',()=>{formDirty=true;});
     document.addEventListener('click',event=>{
       const view=event.target.closest('.nav-button');if(view){switchView(view.dataset.view);return;}
       const preview=event.target.closest('.preview-tab');if(preview){currentPreview=preview.dataset.preview;document.querySelectorAll('.preview-tab').forEach(b=>b.classList.toggle('active',b===preview));renderPreview();return;}
       const add=event.target.closest('[data-add-type]');if(add){resetForm(add.dataset.addType);openEditor(add.dataset.addType);return;}
       const card=event.target.closest('.entry');if(!card)return;const entry=allEntries().find(item=>Number(item.id)===Number(card.dataset.id));if(!entry)return;
-      if(event.target.closest('.edit')){$('entryId').value=entry.id;$(entry.type==='log'?'typeLog':'typeSchedule').checked=true;$('entryDate').value=entry.date;$('time').value=entry.time||'';$('title').value=entry.title;$('content').value=entry.content||'';$('formHeading').textContent='编辑记录';$('formHint').textContent='修改后保存，原记录会立即更新。';$('save').textContent='保存修改';$('cancel').hidden=false;pendingCreate=null;setFormStatus();openEditor(entry.type);}
+      if(event.target.closest('.edit')){$('entryId').value=entry.id;$(entry.type==='log'?'typeLog':'typeSchedule').checked=true;$('entryDate').value=entry.date;$('time').value=entry.time||'';$('title').value=entry.title;$('content').value=entry.content||'';$('formHeading').textContent='编辑记录';$('formHint').textContent='修改后保存，原记录会立即更新。';$('save').textContent='保存修改';$('cancel').hidden=false;pendingCreate=null;formDirty=false;setFormStatus();openEditor(entry.type);}
       if(event.target.closest('.delete')){deleteTarget=entry;$('deleteTitle').textContent=entry.title;$('deleteDialog').showModal();}
     });
     $('deleteForm').addEventListener('submit',async event=>{
-      if(event.submitter?.value!=='delete'||!deleteTarget)return;event.preventDefault();const entry=deleteTarget;$('confirmDelete').disabled=true;
-      try{await api(`/api/entries/${entry.id}`,{method:'DELETE'});$('deleteDialog').close();deleteTarget=null;if(Number($('entryId').value)===Number(entry.id))resetForm();await load({successMessage:'记录已删除。'});}
-      catch(error){$('deleteDialog').close();setNotice('error',friendlyError(error));}finally{$('confirmDelete').disabled=false;}
+      if(event.submitter?.value!=='delete'||!deleteTarget)return;event.preventDefault();if(mutationInFlight)return;const entry=deleteTarget;mutationInFlight=true;$('confirmDelete').disabled=true;
+      try{await waitForActiveLoad();await api(`/api/entries/${entry.id}`,{method:'DELETE'});$('deleteDialog').close();deleteTarget=null;if(Number($('entryId').value)===Number(entry.id))resetForm();finishMutation(false);await load({successMessage:'记录已删除。'});}
+      catch(error){$('deleteDialog').close();setNotice('error',friendlyError(error));}finally{if(mutationInFlight)finishMutation();$('confirmDelete').disabled=false;}
     });
-    $('tokenForm').addEventListener('submit',event=>{if(event.submitter?.value!=='save')return;token=$('token').value.trim();if($('rememberToken').checked&&token)localStorage.setItem('dashboardToken',token);else localStorage.removeItem('dashboardToken');window.setTimeout(()=>load({serverDate:true}),0);});
-    $('prev').onclick=()=>changeDay(-1);$('next').onclick=()=>changeDay(1);$('today').onclick=()=>load({serverDate:true});$('date').onchange=()=>{resetForm();load();};
+    $('prev').onclick=()=>changeDay(-1);$('next').onclick=()=>changeDay(1);$('today').onclick=()=>{$('date').value=localIsoDate();resetForm();load();};$('date').onchange=()=>{resetForm();load();};
     $('newEntry').onclick=()=>{const type=document.body.dataset.view==='log'?'log':'schedule';resetForm(type);openEditor(type);};$('cancel').onclick=()=>resetForm();$('retry').onclick=()=>load();
-    $('tokenButton').onclick=()=>{$('token').value=token;$('rememberToken').checked=Boolean(localStorage.getItem('dashboardToken'));$('tokenDialog').showModal();};
-    $('date').value=localIsoDate();resetForm();updateMockClock();render();load({serverDate:true});window.setInterval(updateMockClock,30000);
+    $('refreshButton').onclick=()=>load({successMessage:'已读取最新内容。'});
+    $('date').value=localIsoDate();resetForm();updateMockClock();render();load({serverDate:true});window.setInterval(updateMockClock,30000);window.setInterval(()=>load({background:true}),5000);
   </script>
 </body>
 </html>
